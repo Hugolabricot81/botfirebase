@@ -191,16 +191,71 @@ class BrawlStarsBot:
             url = f'https://brawlace.com/clubs/%23{clean_tag}'
             
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0',
+                'Referer': 'https://brawlace.com/'
             }
             
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url) as response:
-                    if response.status != 200:
+            # Configuration du connecteur avec timeout plus long
+            connector = aiohttp.TCPConnector(
+                limit=100,
+                limit_per_host=30,
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+            )
+            
+            # Timeout configuration
+            timeout = aiohttp.ClientTimeout(total=30, connect=10)
+            
+            async with aiohttp.ClientSession(
+                headers=headers, 
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                
+                # Attendre un peu pour éviter d'être détecté comme bot
+                await asyncio.sleep(2)
+                
+                logger.info(f"Tentative de scraping pour {url}")
+                
+                async with session.get(url, ssl=False) as response:
+                    logger.info(f"Status code: {response.status} pour {url}")
+                    
+                    if response.status == 403:
+                        logger.error(f"Accès refusé (403) pour {url}. Le site bloque probablement les bots.")
+                        
+                        # Essayer avec une approche différente - simuler plus de comportement humain
+                        await asyncio.sleep(5)  # Attendre plus longtemps
+                        
+                        # Essayer sans SSL
+                        try:
+                            async with session.get(url, ssl=False, allow_redirects=True) as retry_response:
+                                if retry_response.status == 200:
+                                    html = await retry_response.text()
+                                    logger.info(f"Succès après retry pour {url}")
+                                else:
+                                    logger.error(f"Retry échoué avec status {retry_response.status}")
+                                    return []
+                        except Exception as retry_error:
+                            logger.error(f"Erreur lors du retry: {retry_error}")
+                            return []
+                    
+                    elif response.status == 200:
+                        html = await response.text()
+                        logger.info(f"HTML récupéré avec succès pour {club_tag}")
+                    
+                    else:
                         logger.error(f"Erreur HTTP {response.status} pour {url}")
                         return []
-                    
-                    html = await response.text()
             
             logger.info(f"HTML récupéré pour {club_tag}, taille: {len(html)}")
             
@@ -370,17 +425,20 @@ class BrawlStarsBot:
             logger.error(f"Erreur lors de la recherche du meilleur rusheur pour {club_name}: {e}")
             return None
     
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=120)  # Changé à 120 secondes (2 minutes) pour éviter d'être bloqué
     async def auto_update(self):
-        """Met à jour automatiquement tous les clubs toutes les 30 secondes"""
+        """Met à jour automatiquement tous les clubs toutes les 2 minutes"""
         logger.info("Début de la mise à jour automatique")
         
         for club_name, club_tag in self.clubs.items():
             try:
                 await self.scrape_and_update_club(club_tag, club_name)
-                await asyncio.sleep(2)  # Petite pause entre chaque club
+                await asyncio.sleep(10)  # Pause de 10 secondes entre chaque club
             except Exception as e:
                 logger.error(f"Erreur lors de la mise à jour automatique de {club_name}: {e}")
+        
+        # Pause supplémentaire après tous les clubs
+        await asyncio.sleep(30)
     
     def run_flask(self):
         """Lance le serveur Flask"""
