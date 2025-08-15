@@ -80,6 +80,7 @@ class BrawlStarsBot:
             
             # Démarrer la mise à jour automatique
             self.auto_update.start()
+            logger.info("Mise à jour automatique programmée toutes les heures")
         
         @self.bot.tree.command(name="mytrophy", description="Affiche vos trophées actuels")
         async def mytrophy(interaction: discord.Interaction, player_id: str):
@@ -143,8 +144,13 @@ class BrawlStarsBot:
                 
                 embed = discord.Embed(
                     title="✅ Mise à jour terminée",
-                    description=f"Club: {club_name}\nJoueurs mis à jour: {updated_count}",
+                    description=f"Club: **{club_name}**\nJoueurs mis à jour: **{updated_count}**",
                     color=0x00ff00
+                )
+                embed.add_field(
+                    name="ℹ️ Information",
+                    value="Seuls les trophées actuels ont été mis à jour.\nLes trophées de début de mois sont préservés.",
+                    inline=False
                 )
                 await interaction.followup.send(embed=embed)
                 
@@ -183,6 +189,53 @@ class BrawlStarsBot:
             except Exception as e:
                 logger.error(f"Erreur dans meilleur_rusheur: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de la récupération des données.")
+        
+        @self.bot.tree.command(name="reset_debut_mois", description="Remet à jour les trophées de début de mois pour un club")
+        async def reset_debut_mois(interaction: discord.Interaction, club_name: str):
+            await interaction.response.defer()
+            
+            if club_name not in self.clubs:
+                available_clubs = ", ".join(self.clubs.keys())
+                await interaction.followup.send(f"Club '{club_name}' non trouvé. Clubs disponibles: {available_clubs}")
+                return
+            
+            try:
+                # Récupérer tous les joueurs du club
+                players_ref = self.db.collection('players')
+                query = players_ref.where('club', '==', club_name)
+                docs = query.stream()
+                
+                updated_count = 0
+                current_time = datetime.now(timezone.utc)
+                
+                for doc in docs:
+                    player_data = doc.to_dict()
+                    
+                    # Mettre à jour trophees_debut_mois avec trophees_actuels
+                    doc.reference.update({
+                        'trophees_debut_mois': player_data['trophees_actuels'],
+                        'updatedAt': current_time
+                    })
+                    updated_count += 1
+                
+                embed = discord.Embed(
+                    title="🔄 Réinitialisation terminée",
+                    description=f"Club: **{club_name}**\nJoueurs mis à jour: **{updated_count}**",
+                    color=0x00ff00
+                )
+                embed.add_field(
+                    name="Action effectuée",
+                    value="Les trophées de début de mois ont été remis à jour avec les trophées actuels",
+                    inline=False
+                )
+                embed.set_footer(text=f"Réinitialisé le {current_time.strftime('%d/%m/%Y à %H:%M')}")
+                
+                await interaction.followup.send(embed=embed)
+                logger.info(f"Reset début mois effectué pour {club_name}: {updated_count} joueurs mis à jour")
+                
+            except Exception as e:
+                logger.error(f"Erreur dans reset_debut_mois: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de la réinitialisation.")
     
     async def scrape_club_data(self, club_tag):
         """Scrape les données d'un club depuis brawlace.com"""
@@ -343,7 +396,7 @@ class BrawlStarsBot:
             return []
     
     async def scrape_and_update_club(self, club_tag, club_name):
-        """Scrape et met à jour les données d'un club dans Firebase"""
+        """Scrape et met à jour les données d'un club dans Firebase (SANS toucher aux trophees_debut_mois)"""
         players_data = await self.scrape_club_data(club_tag)
         updated_count = 0
         
@@ -355,7 +408,7 @@ class BrawlStarsBot:
                 current_time = datetime.now(timezone.utc)
                 
                 if player_doc.exists:
-                    # Mettre à jour le joueur existant
+                    # Mettre à jour le joueur existant - NE PAS TOUCHER trophees_debut_mois
                     update_data = {
                         'pseudo': player_data['pseudo'],
                         'trophees_actuels': player_data['trophies'],
@@ -363,24 +416,26 @@ class BrawlStarsBot:
                         'updatedAt': current_time
                     }
                     player_ref.update(update_data)
+                    logger.debug(f"Joueur existant mis à jour: {player_data['pseudo']} - trophees_debut_mois préservé")
                 else:
-                    # Créer un nouveau joueur
+                    # Créer un nouveau joueur - ici on initialise trophees_debut_mois = trophees_actuels
                     new_player_data = {
                         'pseudo': player_data['pseudo'],
                         'id': player_data['id'],
-                        'trophees_debut_mois': player_data['trophies'],
+                        'trophees_debut_mois': player_data['trophies'],  # Seulement pour les nouveaux joueurs
                         'trophees_actuels': player_data['trophies'],
                         'club': club_name,
                         'updatedAt': current_time
                     }
                     player_ref.set(new_player_data)
+                    logger.debug(f"Nouveau joueur créé: {player_data['pseudo']} - trophees_debut_mois initialisé")
                 
                 updated_count += 1
                 
             except Exception as e:
                 logger.error(f"Erreur lors de la mise à jour du joueur {player_data['id']}: {e}")
         
-        logger.info(f"Mis à jour {updated_count} joueurs pour {club_name}")
+        logger.info(f"Mis à jour {updated_count} joueurs pour {club_name} (trophees_debut_mois préservés)")
         return updated_count
     
     async def get_best_rusher(self, club_name):
@@ -407,20 +462,19 @@ class BrawlStarsBot:
             logger.error(f"Erreur lors de la recherche du meilleur rusheur pour {club_name}: {e}")
             return None
     
-    @tasks.loop(seconds=120)  # Changé à 120 secondes (2 minutes) pour éviter d'être bloqué
+    @tasks.loop(hours=1)  # Changé à 1 heure
     async def auto_update(self):
-        """Met à jour automatiquement tous les clubs toutes les 2 minutes"""
-        logger.info("Début de la mise à jour automatique")
+        """Met à jour automatiquement tous les clubs toutes les heures"""
+        logger.info("Début de la mise à jour automatique (toutes les heures)")
         
         for club_name, club_tag in self.clubs.items():
             try:
                 await self.scrape_and_update_club(club_tag, club_name)
-                await asyncio.sleep(10)  # Pause de 10 secondes entre chaque club
+                await asyncio.sleep(5)  # Pause de 5 secondes entre chaque club
             except Exception as e:
                 logger.error(f"Erreur lors de la mise à jour automatique de {club_name}: {e}")
         
-        # Pause supplémentaire après tous les clubs
-        await asyncio.sleep(30)
+        logger.info("Mise à jour automatique terminée")
     
     def run_flask(self):
         """Lance le serveur Flask"""
