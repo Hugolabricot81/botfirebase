@@ -18,7 +18,7 @@ db = firestore.client()
 # -------------------------------
 # CONFIG DISCORD
 # -------------------------------
-TOKEN = "TON_TOKEN_DISCORD_ICI"
+TOKEN = "DISCORD_TOKEN"
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
