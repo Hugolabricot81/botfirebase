@@ -9,12 +9,13 @@ import requests
 import os
 import re
 
-# Utiliser le secret file monté par Render
-FIREBASE_KEY_PATH = "/run/secrets/FIREBASE_KEY"
+# Lire le JSON depuis la variable d'environnement FIREBASE_KEY_JSON
+firebase_json = os.environ.get("FIREBASE_KEY_JSON")
+if not firebase_json:
+    raise ValueError("La variable d'environnement FIREBASE_KEY_JSON n'existe pas")
 
-# Vérification
-if not os.path.exists(FIREBASE_KEY_PATH):
-    raise ValueError(f"Le fichier Firebase n'existe pas à {FIREBASE_KEY_PATH}")
+# Convertir la chaîne JSON en dict
+cred_dict = json.loads(firebase_json)
 
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
