@@ -1,117 +1,106 @@
 import os
 import discord
 from discord.ext import commands, tasks
-from discord import app_commands
+import asyncio
 import firebase_admin
 from firebase_admin import credentials, firestore
-from flask import Flask
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 
-# ---------------- Firebase ----------------
-FIREBASE_KEY_PATH = "serviceAccountKey.json"
-cred = credentials.Certificate(FIREBASE_KEY_PATH)
+# ====== CONFIGURATION FIREBASE ======
+cred = credentials.Certificate("firebaseKey.json")  # Fichier de clé Firebase
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ---------------- Google Sheets ----------------
-# Accès aux deux feuilles "DébutMois" et "clubstr"
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds_sheets = ServiceAccountCredentials.from_json_keyfile_name(FIREBASE_KEY_PATH, scope)
-client_sheets = gspread.authorize(creds_sheets)
-
-# ID de ton Google Sheets (dans l'URL)
-SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
-
-sheet_debut = client_sheets.open_by_key(SPREADSHEET_ID).worksheet("DébutMois")
-sheet_actuel = client_sheets.open_by_key(SPREADSHEET_ID).worksheet("clubstr")
-
-# ---------------- Discord ----------------
+# ====== CONFIGURATION DISCORD ======
+TOKEN = os.environ.get("DISCORD_TOKEN")  # Ton token dans Render
+CHANNEL_ID = 1402293997560401941  # ID du salon où poster le leaderboard
 intents = discord.Intents.default()
-intents.message_content = True
 bot = commands.Bot(command_prefix="/", intents=intents)
 
-# ---------------- Flask ----------------
-app = Flask("")
+# ====== FONCTIONS FIREBASE ======
 
-@app.route("/")
-def home():
-    return "Bot en ligne !"
+def save_scraped_data(club_name, players):
+    """
+    Enregistre les données scrapées dans Firestore.
+    players: liste de dicts {pseudo, tag, trophies_start, trophies_now}
+    """
+    club_ref = db.collection("clubs").document(club_name)
+    for player in players:
+        club_ref.collection("players").document(player["tag"]).set(player)
 
-def run_flask():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
-# ---------------- Fonction scraping ----------------
-def get_all_players():
-    clubs = [
-        "Prairie fleurie",
-        "Prairie celeste",
-        "Prairie etoilee",
-        "Prairie brulee",
-        "Prairie gelée",
-        "Mini prairie"
-    ]
-
-    players = []
-    for club in clubs:
-        # On récupère les colonnes : pseudo, tag, trophées
-        data_debut = sheet_debut.get_all_values()
-        data_actuel = sheet_actuel.get_all_values()
-
-        # On suppose ici que les données sont dans des blocs de 3 colonnes pour chaque club
-        # pseudo | tag | trophées
-        # On filtre en fonction du nom du club (à adapter si la structure diffère)
-        
-        # ⚠ Ici on fait simple : on boucle sur toutes les lignes et on aligne début/actuel
-        for i in range(len(data_debut)):
-            pseudo_debut, tag_debut, trophees_debut = data_debut[i][0:3]
-            pseudo_actuel, tag_actuel, trophees_actuel = data_actuel[i][0:3]
-
-            if tag_debut == tag_actuel and tag_debut.strip() != "":
-                players.append({
-                    "pseudo": pseudo_debut,
-                    "id": tag_debut,
-                    "trophees_debut_mois": int(trophees_debut),
-                    "trophees_actuels": int(trophees_actuel),
-                    "club": club
-                })
+def get_leaderboard(club_name):
+    """
+    Récupère et trie les joueurs d'un club selon leur gain de trophées.
+    """
+    players_ref = db.collection("clubs").document(club_name).collection("players").stream()
+    players = [doc.to_dict() for doc in players_ref]
+    players.sort(key=lambda x: x["trophies_now"] - x["trophies_start"], reverse=True)
     return players
 
-# ---------------- Commande slash ----------------
-@bot.tree.command(name="update", description="Scrape Google Sheets et met à jour Firestore (sans colonnes Mega Pig)")
-async def update(interaction: discord.Interaction):
-    joueurs = get_all_players()
 
-    for joueur in joueurs:
-        doc_ref = db.collection("players").document(joueur["id"])
-        joueur["updatedAt"] = firestore.SERVER_TIMESTAMP
-        doc_ref.set(joueur)
+def get_player(tag):
+    """
+    Récupère les infos d'un joueur par son tag (peu importe le club).
+    """
+    clubs_ref = db.collection("clubs").stream()
+    for club in clubs_ref:
+        players_ref = db.collection("clubs").document(club.id).collection("players").stream()
+        for player in players_ref:
+            data = player.to_dict()
+            if data["tag"].lower() == tag.lower():
+                return data
+    return None
 
-    await interaction.response.send_message(f"✅ {len(joueurs)} joueurs mis à jour dans Firestore !")
+# ====== COMMANDES DISCORD ======
 
-# ---------------- Background task ----------------
+@bot.command(name="mytrophy")
+async def mytrophy(ctx, tag: str):
+    """Affiche les trophées actuels d'un joueur."""
+    player = get_player(tag)
+    if player:
+        gain = player["trophies_now"] - player["trophies_start"]
+        await ctx.send(f"🏆 **{player['pseudo']}**\n"
+                       f"Trophées actuels : {player['trophies_now']}\n"
+                       f"Gain ce mois-ci : {gain}")
+    else:
+        await ctx.send("❌ Joueur introuvable.")
+
+
+@bot.command(name="leaderboard")
+async def leaderboard(ctx):
+    """Affiche le meilleur rusheur de chaque club."""
+    clubs_ref = db.collection("clubs").stream()
+    leaderboard_msg = "**🏆 Meilleurs rusheurs par club :**\n"
+    for club in clubs_ref:
+        players = get_leaderboard(club.id)
+        if players:
+            best = players[0]
+            gain = best["trophies_now"] - best["trophies_start"]
+            leaderboard_msg += f"**{club.id}** → {best['pseudo']} (+{gain} trophées)\n"
+    await ctx.send(leaderboard_msg)
+
+# ====== TÂCHE AUTOMATIQUE ======
+
 @tasks.loop(hours=1)
-async def update_task():
-    joueurs = get_all_players()
-    for joueur in joueurs:
-        doc_ref = db.collection("players").document(joueur["id"])
-        joueur["updatedAt"] = firestore.SERVER_TIMESTAMP
-        doc_ref.set(joueur)
-    print(f"[Auto-update] {len(joueurs)} joueurs mis à jour")
+async def auto_leaderboard():
+    """Poste le leaderboard automatiquement toutes les heures."""
+    channel = bot.get_channel(CHANNEL_ID)
+    if channel:
+        clubs_ref = db.collection("clubs").stream()
+        leaderboard_msg = "**🏆 Meilleurs rusheurs par club :**\n"
+        for club in clubs_ref:
+            players = get_leaderboard(club.id)
+            if players:
+                best = players[0]
+                gain = best["trophies_now"] - best["trophies_start"]
+                leaderboard_msg += f"**{club.id}** → {best['pseudo']} (+{gain} trophées)\n"
+        await channel.send(leaderboard_msg)
 
 @bot.event
 async def on_ready():
-    print(f"Connecté en tant que {bot.user}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} commandes slash")
-    except Exception as e:
-        print(f"Erreur sync slash commands : {e}")
-    update_task.start()
+    print(f"✅ Connecté en tant que {bot.user}")
+    auto_leaderboard.start()
 
-# ---------------- Lancement ----------------
-if __name__ == "__main__":
-    import threading
-    threading.Thread(target=run_flask).start()
-    TOKEN = os.environ.get("DISCORD_TOKEN")
-    bot.run(TOKEN)
+# ====== LANCEMENT ======
+bot.run(TOKEN)
