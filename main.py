@@ -13,7 +13,7 @@ import re
 # CONFIGURATION
 # -------------------------------
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")  # Token du bot
-FIREBASE_KEY_PATH = os.environ.get("FIREBASE_KEY_PATH")  # Chemin vers le secret file Firebase
+FIREBASE_KEY_PATH = os.environ.get("serviceAccountKey.json")  # Chemin vers le secret file Firebase
 
 # Initialisation Firebase
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
