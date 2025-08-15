@@ -5,16 +5,30 @@ from discord import app_commands
 import firebase_admin
 from firebase_admin import credentials, firestore
 from flask import Flask
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # ---------------- Firebase ----------------
-FIREBASE_KEY_PATH = "serviceAccountKey.json"  # nom exact du fichier dans ton repo
+FIREBASE_KEY_PATH = "serviceAccountKey.json"
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
+# ---------------- Google Sheets ----------------
+# Accès aux deux feuilles "DébutMois" et "clubstr"
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds_sheets = ServiceAccountCredentials.from_json_keyfile_name(FIREBASE_KEY_PATH, scope)
+client_sheets = gspread.authorize(creds_sheets)
+
+# ID de ton Google Sheets (dans l'URL)
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
+
+sheet_debut = client_sheets.open_by_key(SPREADSHEET_ID).worksheet("DébutMois")
+sheet_actuel = client_sheets.open_by_key(SPREADSHEET_ID).worksheet("clubstr")
+
 # ---------------- Discord ----------------
 intents = discord.Intents.default()
-intents.message_content = True  # pour lire le contenu des messages / slash commands
+intents.message_content = True
 bot = commands.Bot(command_prefix="/", intents=intents)
 
 # ---------------- Flask ----------------
@@ -27,44 +41,63 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
-# ---------------- Commande slash ----------------
-@bot.tree.command(name="update", description="Met à jour les joueurs dans Firestore (test)")
-async def update(interaction: discord.Interaction):
-    # Exemple de joueurs
-    joueurs = [
-        {
-            "pseudo": "Hugo",
-            "id": "12345",
-            "trophees_debut_mois": 300,
-            "trophees_actuels": 350,
-            "club": "Prairie",
-            "tickets_mega_pig": 10,
-            "wins_pig": 5,
-        },
-        {
-            "pseudo": "Alice",
-            "id": "67890",
-            "trophees_debut_mois": 250,
-            "trophees_actuels": 280,
-            "club": "MiniPrairie",
-            "tickets_mega_pig": 7,
-            "wins_pig": 3,
-        }
+# ---------------- Fonction scraping ----------------
+def get_all_players():
+    clubs = [
+        "Prairie fleurie",
+        "Prairie celeste",
+        "Prairie etoilee",
+        "Prairie brulee",
+        "Prairie gelée",
+        "Mini prairie"
     ]
 
-    # Mise à jour Firestore
+    players = []
+    for club in clubs:
+        # On récupère les colonnes : pseudo, tag, trophées
+        data_debut = sheet_debut.get_all_values()
+        data_actuel = sheet_actuel.get_all_values()
+
+        # On suppose ici que les données sont dans des blocs de 3 colonnes pour chaque club
+        # pseudo | tag | trophées
+        # On filtre en fonction du nom du club (à adapter si la structure diffère)
+        
+        # ⚠ Ici on fait simple : on boucle sur toutes les lignes et on aligne début/actuel
+        for i in range(len(data_debut)):
+            pseudo_debut, tag_debut, trophees_debut = data_debut[i][0:3]
+            pseudo_actuel, tag_actuel, trophees_actuel = data_actuel[i][0:3]
+
+            if tag_debut == tag_actuel and tag_debut.strip() != "":
+                players.append({
+                    "pseudo": pseudo_debut,
+                    "id": tag_debut,
+                    "trophees_debut_mois": int(trophees_debut),
+                    "trophees_actuels": int(trophees_actuel),
+                    "club": club
+                })
+    return players
+
+# ---------------- Commande slash ----------------
+@bot.tree.command(name="update", description="Scrape Google Sheets et met à jour Firestore (sans colonnes Mega Pig)")
+async def update(interaction: discord.Interaction):
+    joueurs = get_all_players()
+
     for joueur in joueurs:
         doc_ref = db.collection("players").document(joueur["id"])
         joueur["updatedAt"] = firestore.SERVER_TIMESTAMP
         doc_ref.set(joueur)
 
-    await interaction.response.send_message("✅ Firestore mis à jour !")
+    await interaction.response.send_message(f"✅ {len(joueurs)} joueurs mis à jour dans Firestore !")
 
-# ---------------- Background task (facultative) ----------------
-@tasks.loop(minutes=30)
+# ---------------- Background task ----------------
+@tasks.loop(hours=1)
 async def update_task():
-    # Ici tu peux mettre le code pour scraper et mettre à jour automatiquement
-    print("Update automatique tous les 30 min (simulation)")
+    joueurs = get_all_players()
+    for joueur in joueurs:
+        doc_ref = db.collection("players").document(joueur["id"])
+        joueur["updatedAt"] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(joueur)
+    print(f"[Auto-update] {len(joueurs)} joueurs mis à jour")
 
 @bot.event
 async def on_ready():
