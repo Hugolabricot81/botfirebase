@@ -1,82 +1,111 @@
-# main.py
-import asyncio
 import discord
-from discord.ext import commands, tasks
+from discord import app_commands
+import asyncio
 import firebase_admin
 from firebase_admin import credentials, firestore
+from flask import Flask
+import threading
 import requests
-import re
 import os
+import re
 
-# --- CONFIG ---
-DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
-FIREBASE_KEY_PATH = "/etc/secrets/serviceAccountKey.json"  # chemin du secret file sur Render
+# -------------------------------
+# CONFIGURATION
+# -------------------------------
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")  # Token du bot
+FIREBASE_KEY_PATH = os.environ.get("FIREBASE_KEY_PATH")  # Chemin vers le secret file Firebase
 
-# --- INIT FIREBASE ---
+# Initialisation Firebase
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# --- INIT BOT ---
-intents = discord.Intents.default()
-intents.message_content = True  # nécessaire pour lire le contenu des messages si tu en as besoin
-bot = commands.Bot(command_prefix='!', intents=intents)
-
-# --- SCRAPING CLUB ---
+# -------------------------------
+# SCRAPING FONCTION
+# -------------------------------
 def scrape_club(club_tag):
-    """Retourne la liste des joueurs d'un club avec pseudo, id et trophées."""
-    clean_tag = club_tag.replace('#', '').upper()
-    url = f'https://brawlace.com/clubs/%23{clean_tag}'
+    """Scrape les joueurs d’un club depuis Brawlace"""
+    url = f"https://brawlace.com/clubs/%23{club_tag.replace('#','').upper()}"
     response = requests.get(url)
     html = response.text
 
-    tr_regex = re.compile(r'<tr[^>]*>([\s\S]*?)</tr>', re.IGNORECASE)
-    td_regex = re.compile(r'<td[^>]*>([\s\S]*?)</td>', re.IGNORECASE)
+    tr_regex = re.compile(r"<tr[^>]*>([\s\S]*?)<\/tr>", re.IGNORECASE)
+    td_regex = re.compile(r"<td[^>]*>([\s\S]*?)<\/td>", re.IGNORECASE)
 
     result = []
-    for tr_match in tr_regex.finditer(html):
-        tds = [td.strip() for td in td_regex.findall(tr_match.group(1))]
+
+    for tr_match in tr_regex.findall(html):
+        tds = td_regex.findall(tr_match)
         if len(tds) >= 4:
-            # Pseudo
-            pseudo_match = re.search(r'<a[^>]*>(.*?)</a>', tds[1])
-            pseudo = pseudo_match.group(1).strip() if pseudo_match else re.sub(r'<[^>]+>', '', tds[1]).strip()
-            # ID
-            id_match = re.search(r'data-bs-player-tag=[\'"](#.*?)["\']', tds[1])
-            player_id = id_match.group(1).strip() if id_match else ""
-            # Trophées actuels
-            trophies = int(re.sub(r'[^\d]', '', tds[3]))
+            pseudo_match = re.search(r"<a[^>]*>(.*?)<\/a>", tds[1])
+            pseudo = pseudo_match.group(1).strip() if pseudo_match else tds[1].strip()
+
+            id_match = re.search(r'data-bs-player-tag=["\'](#.*?)["\']', tds[1])
+            player_id = id_match.group(1) if id_match else ""
+
+            trophies = int(re.sub(r"[^\d]", "", tds[3]))
+
             result.append({
                 "pseudo": pseudo,
                 "id": player_id,
                 "trophies": trophies
             })
+
     return result
 
-# --- FIREBASE UPDATE ---
+# -------------------------------
+# FIREBASE UPDATE
+# -------------------------------
 def update_firebase(club_tag):
+    """Met à jour les joueurs dans Firestore"""
     players = scrape_club(club_tag)
     for player in players:
         doc_ref = db.collection("players").document(player["id"])
         doc_ref.set({
             "pseudo": player["pseudo"],
             "id": player["id"],
-            "trophées_actuels": player["trophies"],
-            "club": club_tag,
-            "updatedAt": firestore.SERVER_TIMESTAMP
-        }, merge=True)  # merge=True pour ne pas écraser le document entier
+            "trophies": player["trophies"],
+            "club": club_tag
+        }, merge=True)
 
-# --- COMMANDES ---
-@bot.slash_command(name="update", description="Met à jour les joueurs du club")
-async def update(ctx, club_tag: str):
-    await ctx.respond(f"Mise à jour du club {club_tag}...")
-    update_firebase(club_tag)
-    await ctx.send(f"Club {club_tag} mis à jour dans Firebase !")
+# -------------------------------
+# DISCORD BOT
+# -------------------------------
+class MyClient(discord.Client):
+    def __init__(self, *, intents: discord.Intents):
+        super().__init__(intents=intents)
+        self.tree = app_commands.CommandTree(self)
 
-# --- TÂCHE AUTOMATIQUE (OPTIONNELLE) ---
-# @tasks.loop(hours=1)
-# async def auto_update():
-#     update_firebase("TON_CLUB_TAG")
+    async def setup_hook(self):
+        await self.tree.sync()
 
-# --- RUN BOT ---
-if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+intents = discord.Intents.default()
+intents.message_content = True
+client = MyClient(intents=intents)
+
+@client.tree.command(name="update", description="Met à jour les joueurs du club")
+async def update(interaction: discord.Interaction, club_tag: str):
+    await interaction.response.send_message(f"Mise à jour du club {club_tag}...")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, update_firebase, club_tag)
+    await interaction.followup.send(f"Club {club_tag} mis à jour dans Firebase !")
+
+# -------------------------------
+# FLASK SERVER POUR PING
+# -------------------------------
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "Bot en ligne !"
+
+def run():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+# Démarrage du serveur Flask dans un thread
+threading.Thread(target=run).start()
+
+# -------------------------------
+# RUN BOT
+# -------------------------------
+client.run(DISCORD_TOKEN)
