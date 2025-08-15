@@ -8,7 +8,7 @@ import threading
 import requests
 import os
 import re
-
+import json  # <- Ajouté
 # Lire le JSON depuis la variable d'environnement FIREBASE_KEY_JSON
 firebase_json = os.environ.get("FIREBASE_KEY_JSON")
 if not firebase_json:
