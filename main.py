@@ -190,7 +190,11 @@ class BrawlStarsBot:
             clean_tag = club_tag.replace('#', '').upper()
             url = f'https://brawlace.com/clubs/%23{clean_tag}'
             
-            async with aiohttp.ClientSession() as session:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(url) as response:
                     if response.status != 200:
                         logger.error(f"Erreur HTTP {response.status} pour {url}")
@@ -198,51 +202,107 @@ class BrawlStarsBot:
                     
                     html = await response.text()
             
-            # Parser le HTML pour extraire les données des joueurs
-            tr_pattern = re.compile(r'<tr[^>]*>([\s\S]*?)</tr>', re.IGNORECASE)
-            td_pattern = re.compile(r'<td[^>]*>([\s\S]*?)</td>', re.IGNORECASE)
+            logger.info(f"HTML récupéré pour {club_tag}, taille: {len(html)}")
             
+            # Debug: sauvegarder un échantillon du HTML
+            if len(html) < 1000:
+                logger.warning(f"HTML très court pour {club_tag}: {html[:500]}")
+            
+            # Parser le HTML plus robustement
             players = []
             
-            for tr_match in tr_pattern.finditer(html):
-                tr_content = tr_match.group(1)
-                tds = [td_match.group(1).strip() for td_match in td_pattern.finditer(tr_content)]
+            # Rechercher toutes les lignes de tableau
+            tr_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
+            logger.info(f"Trouvé {len(tr_matches)} lignes de tableau")
+            
+            for tr_content in tr_matches:
+                # Extraire toutes les cellules td
+                td_matches = re.findall(r'<td[^>]*>(.*?)</td>', tr_content, re.DOTALL | re.IGNORECASE)
                 
-                if len(tds) >= 4:
-                    # Extraire le pseudo
-                    pseudo_match = re.search(r'<a[^>]*>(.*?)</a>', tds[1])
-                    pseudo = pseudo_match.group(1) if pseudo_match else ""
+                if len(td_matches) >= 4:
+                    # Cellule 1 (index 1) contient généralement le pseudo et l'ID
+                    player_cell = td_matches[1] if len(td_matches) > 1 else ""
+                    
+                    # Extraire le pseudo - chercher dans les balises <font> ou <a>
+                    pseudo = ""
+                    pseudo_patterns = [
+                        r'<font[^>]*>([^<]+)</font>',
+                        r'<a[^>]*>([^<]+)</a>',
+                        r'>([^<]+)<'
+                    ]
+                    
+                    for pattern in pseudo_patterns:
+                        match = re.search(pattern, player_cell)
+                        if match and match.group(1).strip():
+                            pseudo = match.group(1).strip()
+                            break
                     
                     # Extraire l'ID du joueur
-                    id_match = re.search(r'data-bs-player-tag=[\'"]([^\'""]*)[\'"]', tds[1])
-                    player_id = id_match.group(1) if id_match else ""
+                    player_id = ""
+                    id_patterns = [
+                        r'data-bs-player-tag=[\'"]([^\'""]*)[\'"]',
+                        r'player-tag=[\'"]([^\'""]*)[\'"]',
+                        r'href="[^"]*player/([^/"]*)"'
+                    ]
+                    
+                    for pattern in id_patterns:
+                        match = re.search(pattern, player_cell)
+                        if match:
+                            player_id = match.group(1).strip()
+                            if not player_id.startswith('#'):
+                                player_id = '#' + player_id
+                            break
+                    
+                    # Cellule des trophées (généralement index 3)
+                    trophy_cell = td_matches[3] if len(td_matches) > 3 else ""
                     
                     # Extraire les trophées
-                    trophy_match = re.search(r'<font[^>]*>([^<]+)</font>', tds[3])
-                    if not trophy_match:
-                        trophy_match = re.search(r'>([^<]+)<', tds[3])
+                    trophies = 0
+                    trophy_patterns = [
+                        r'<font[^>]*>([0-9,]+)</font>',
+                        r'>([0-9,]+)<',
+                        r'([0-9,]+)'
+                    ]
                     
-                    if trophy_match:
-                        trophies_str = trophy_match.group(1).strip().replace(',', '')
-                        try:
-                            trophies = int(trophies_str)
-                        except ValueError:
-                            continue
-                    else:
-                        continue
+                    for pattern in trophy_patterns:
+                        match = re.search(pattern, trophy_cell)
+                        if match:
+                            trophies_str = match.group(1).strip().replace(',', '').replace(' ', '')
+                            try:
+                                trophies = int(trophies_str)
+                                break
+                            except ValueError:
+                                continue
                     
-                    if pseudo and player_id and trophies:
+                    # Validation et ajout du joueur
+                    if pseudo and player_id and trophies > 0:
                         players.append({
-                            'pseudo': pseudo.strip(),
-                            'id': player_id.strip(),
+                            'pseudo': pseudo,
+                            'id': player_id,
                             'trophies': trophies
                         })
+                        logger.debug(f"Joueur trouvé: {pseudo} ({player_id}) - {trophies} trophées")
+                    else:
+                        # Debug des cas où on ne trouve pas de données
+                        if not pseudo:
+                            logger.debug(f"Pseudo manquant dans: {player_cell[:100]}")
+                        if not player_id:
+                            logger.debug(f"ID manquant dans: {player_cell[:100]}")
+                        if trophies <= 0:
+                            logger.debug(f"Trophées invalides dans: {trophy_cell[:100]}")
             
             logger.info(f"Scrapé {len(players)} joueurs pour le club {club_tag}")
+            
+            # Si aucun joueur trouvé, log un échantillon du HTML pour debug
+            if len(players) == 0 and len(html) > 0:
+                logger.warning(f"Aucun joueur trouvé. Échantillon HTML: {html[:1000]}")
+            
             return players
             
         except Exception as e:
             logger.error(f"Erreur lors du scraping de {club_tag}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return []
     
     async def scrape_and_update_club(self, club_tag, club_name):
