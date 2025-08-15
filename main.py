@@ -1,103 +1,75 @@
-import os
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import firebase_admin
 from firebase_admin import credentials, firestore
-import aiohttp
-from bs4 import BeautifulSoup
-import re
-from webserver import keep_alive
 from datetime import datetime, timezone
 
-# ---------- Config ----------
-TOKEN = os.getenv("DISCORD_TOKEN")
-FIREBASE_KEY_PATH = "serviceAccountKey.json"  # Secret File sur Render
-CLUB_TAGS = ["#2YGPRQYCC", "#AAAAAAA"]       # Ajouter vos clubs
-SCRAPE_URL_BASE = "https://brawlace.com/clubs/%23"
+# -------------------------------
+# CONFIG FIREBASE
+# -------------------------------
+FIREBASE_KEY_PATH = "laprairiebot-firebase-adminsdk-fbsvc-35e17418db.json"
 
-# ---------- Firebase ----------
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ---------- Discord Bot ----------
+# -------------------------------
+# CONFIG DISCORD
+# -------------------------------
+TOKEN = "TON_TOKEN_DISCORD_ICI"
+
 intents = discord.Intents.default()
-intents.message_content = True  # nécessaire pour lire les messages
-# Supprimer intents.members si tu n'as pas activé Server Members Intent
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ---------- Scraper ----------
-async def scrape_club(club_tag):
-    url = SCRAPE_URL_BASE + club_tag.replace("#", "")
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            html = await resp.text()
+# -------------------------------
+# COMMANDE /UPDATE
+# -------------------------------
+@bot.tree.command(name="update", description="Met à jour Firebase avec des données test")
+async def update(interaction: discord.Interaction):
+    await interaction.response.send_message("🔄 Mise à jour Firebase test en cours...")
 
-    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S)
-    membres = []
-
-    for row in rows:
-        cols = re.findall(r"<td.*?>(.*?)</td>", row, re.S)
-        if len(cols) < 4:
-            continue
-
-        pseudo_match = re.search(r"<a[^>]*>(.*?)</a>", cols[1])
-        pseudo = pseudo_match.group(1).strip() if pseudo_match else ""
-
-        id_match = re.search(r"data-bs-player-tag=['\"](#.*?)['\"]", cols[1])
-        player_id = id_match.group(1).strip() if id_match else ""
-
-        try:
-            troph_actuels = int(re.sub(r"[^\d]", "", cols[3]))
-        except ValueError:
-            troph_actuels = 0
-
-        # Tickets et wins pig (à compléter si possible)
-        tickets = 0
-        wins = 0
-
-        membres.append({
-            "pseudo": pseudo,
-            "id": player_id,
-            "trophées_début_mois": 0,
-            "trophées_actuels": troph_actuels,
-            "club": club_tag,
-            "tickets_mega_pig": tickets,
-            "wins_pig": wins,
+    # Données test
+    test_players = [
+        {
+            "pseudo": "TestPlayer1",
+            "id": "#TEST001",
+            "trophées_début_mois": 1000,
+            "trophées_actuels": 1050,
+            "club": "#2YGPRQYCC",
+            "tickets_mega_pig": 5,
+            "wins_pig": 3,
             "updatedAt": datetime.now(timezone.utc)
-        })
+        },
+        {
+            "pseudo": "TestPlayer2",
+            "id": "#TEST002",
+            "trophées_début_mois": 800,
+            "trophées_actuels": 850,
+            "club": "#2YGPRQYCC",
+            "tickets_mega_pig": 2,
+            "wins_pig": 1,
+            "updatedAt": datetime.now(timezone.utc)
+        }
+    ]
 
-    return membres
+    # Écriture dans Firestore
+    for player in test_players:
+        print(f"➡ Mise à jour de {player['pseudo']} (ID: {player['id']})")
+        db.collection("players").document(player["id"]).set(player, merge=True)
 
-async def update_firebase():
-    for tag in CLUB_TAGS:
-        membres = await scrape_club(tag)
-        for membre in membres:
-            db.collection("joueurs").document(membre["id"]).set(membre, merge=True)
-    print("✅ Firebase mise à jour.")
+    await interaction.followup.send("✅ Mise à jour test terminée !")
+    print("✅ Mise à jour test terminée !")
 
-# ---------- Tâche automatique ----------
-@tasks.loop(minutes=30)
-async def auto_update():
-    await update_firebase()
-
-# ---------- Commande slash ----------
-@bot.tree.command(name="update", description="Met à jour la base Firebase manuellement")
-async def update_command(interaction: discord.Interaction):
-    await interaction.response.send_message("Mise à jour en cours...", ephemeral=True)
-    await update_firebase()
-    await interaction.followup.send("✅ Mise à jour terminée.")
-
-# ---------- Event on_ready ----------
+# -------------------------------
+# ON_READY
+# -------------------------------
 @bot.event
 async def on_ready():
-    print(f"Bot connecté en tant que {bot.user}")
-    await bot.tree.sync()  # synchronisation des slash commands
-    auto_update.start()
+    await bot.tree.sync()
+    print(f"{bot.user} est connecté et les slash commands sont synchronisées !")
 
-# ---------- Serveur Flask ----------
-keep_alive()
-
-# ---------- Démarrage du bot ----------
+# -------------------------------
+# LANCEMENT DU BOT
+# -------------------------------
 bot.run(TOKEN)
