@@ -4,74 +4,81 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import firebase_admin
 from firebase_admin import credentials, firestore
-from datetime import datetime, timezone
+from flask import Flask
 
-# -------------------------------
-# CONFIG FIREBASE
-# -------------------------------
-FIREBASE_KEY_PATH = "serviceAccountKey.json"
-
-
+# ---------------- Firebase ----------------
+FIREBASE_KEY_PATH = "serviceAccountKey.json"  # nom exact du fichier dans ton repo
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# -------------------------------
-# CONFIG DISCORD
-# -------------------------------
-TOKEN = os.environ.get("DISCORD_TOKEN")
-
+# ---------------- Discord ----------------
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
+intents.message_content = True  # pour lire le contenu des messages / slash commands
+bot = commands.Bot(command_prefix="/", intents=intents)
 
-# -------------------------------
-# COMMANDE /UPDATE
-# -------------------------------
-@bot.tree.command(name="update", description="Met à jour Firebase avec des données test")
+# ---------------- Flask ----------------
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "Bot en ligne !"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+# ---------------- Commande slash ----------------
+@bot.tree.command(name="update", description="Met à jour les joueurs dans Firestore (test)")
 async def update(interaction: discord.Interaction):
-    await interaction.response.send_message("🔄 Mise à jour Firebase test en cours...")
-
-    # Données test
-    test_players = [
+    # Exemple de joueurs
+    joueurs = [
         {
-            "pseudo": "TestPlayer1",
-            "id": "#TEST001",
-            "trophées_début_mois": 1000,
-            "trophées_actuels": 1050,
-            "club": "#2YGPRQYCC",
-            "tickets_mega_pig": 5,
-            "wins_pig": 3,
-            "updatedAt": datetime.now(timezone.utc)
+            "pseudo": "Hugo",
+            "id": "12345",
+            "trophees_debut_mois": 300,
+            "trophees_actuels": 350,
+            "club": "Prairie",
+            "tickets_mega_pig": 10,
+            "wins_pig": 5,
         },
         {
-            "pseudo": "TestPlayer2",
-            "id": "#TEST002",
-            "trophées_début_mois": 800,
-            "trophées_actuels": 850,
-            "club": "#2YGPRQYCC",
-            "tickets_mega_pig": 2,
-            "wins_pig": 1,
-            "updatedAt": datetime.now(timezone.utc)
+            "pseudo": "Alice",
+            "id": "67890",
+            "trophees_debut_mois": 250,
+            "trophees_actuels": 280,
+            "club": "MiniPrairie",
+            "tickets_mega_pig": 7,
+            "wins_pig": 3,
         }
     ]
 
-    # Écriture dans Firestore
-    for player in test_players:
-        print(f"➡ Mise à jour de {player['pseudo']} (ID: {player['id']})")
-        db.collection("players").document(player["id"]).set(player, merge=True)
+    # Mise à jour Firestore
+    for joueur in joueurs:
+        doc_ref = db.collection("players").document(joueur["id"])
+        joueur["updatedAt"] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(joueur)
 
-    await interaction.followup.send("✅ Mise à jour test terminée !")
-    print("✅ Mise à jour test terminée !")
+    await interaction.response.send_message("✅ Firestore mis à jour !")
 
-# -------------------------------
-# ON_READY
-# -------------------------------
+# ---------------- Background task (facultative) ----------------
+@tasks.loop(minutes=30)
+async def update_task():
+    # Ici tu peux mettre le code pour scraper et mettre à jour automatiquement
+    print("Update automatique tous les 30 min (simulation)")
+
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"{bot.user} est connecté et les slash commands sont synchronisées !")
+    print(f"Connecté en tant que {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} commandes slash")
+    except Exception as e:
+        print(f"Erreur sync slash commands : {e}")
+    update_task.start()
 
-# -------------------------------
-# LANCEMENT DU BOT
-# -------------------------------
-bot.run(TOKEN)
+# ---------------- Lancement ----------------
+if __name__ == "__main__":
+    import threading
+    threading.Thread(target=run_flask).start()
+    TOKEN = os.environ.get("DISCORD_TOKEN")
+    bot.run(TOKEN)
