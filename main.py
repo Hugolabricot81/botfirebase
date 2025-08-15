@@ -1,6 +1,7 @@
 import os
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import firebase_admin
 from firebase_admin import credentials, firestore
 import aiohttp
@@ -11,7 +12,7 @@ from datetime import datetime, timezone
 
 # ---------- Config ----------
 TOKEN = os.getenv("DISCORD_TOKEN")
-FIREBASE_KEY_PATH = "serviceAccountKey.json"  # Render : secret file
+FIREBASE_KEY_PATH = "serviceAccountKey.json"  # Secret File sur Render
 CLUB_TAGS = ["#2YGPRQYCC", "#AAAAAAA"]       # Ajouter vos clubs
 SCRAPE_URL_BASE = "https://brawlace.com/clubs/%23"
 
@@ -22,7 +23,8 @@ db = firestore.client()
 
 # ---------- Discord Bot ----------
 intents = discord.Intents.default()
-intents.message_content = True
+intents.message_content = True  # nécessaire pour lire les messages
+# Supprimer intents.members si tu n'as pas activé Server Members Intent
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ---------- Scraper ----------
@@ -51,7 +53,7 @@ async def scrape_club(club_tag):
         except ValueError:
             troph_actuels = 0
 
-        # Tickets et wins pig (à compléter selon HTML joueur)
+        # Tickets et wins pig (à compléter si possible)
         tickets = 0
         wins = 0
 
@@ -80,17 +82,19 @@ async def update_firebase():
 async def auto_update():
     await update_firebase()
 
-@bot.event
-async def on_ready():
-    print(f"Bot connecté en tant que {bot.user}")
-    auto_update.start()
-
-# ---------- Commande manuelle ----------
+# ---------- Commande slash ----------
 @bot.tree.command(name="update", description="Met à jour la base Firebase manuellement")
 async def update_command(interaction: discord.Interaction):
     await interaction.response.send_message("Mise à jour en cours...", ephemeral=True)
     await update_firebase()
     await interaction.followup.send("✅ Mise à jour terminée.")
+
+# ---------- Event on_ready ----------
+@bot.event
+async def on_ready():
+    print(f"Bot connecté en tant que {bot.user}")
+    await bot.tree.sync()  # synchronisation des slash commands
+    auto_update.start()
 
 # ---------- Serveur Flask ----------
 keep_alive()
