@@ -7,6 +7,8 @@ WORKDIR /app
 # Installer les dépendances système nécessaires
 RUN apt-get update && apt-get install -y \
     gcc \
+    g++ \
+    libbrotli-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copier le fichier requirements.txt
