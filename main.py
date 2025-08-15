@@ -1,106 +1,82 @@
-import os
+# main.py
+import asyncio
 import discord
 from discord.ext import commands, tasks
-import asyncio
 import firebase_admin
 from firebase_admin import credentials, firestore
-from datetime import datetime
+import requests
+import re
+import os
 
-# ====== CONFIGURATION FIREBASE ======
-cred = credentials.Certificate("firebaseKey.json")  # Fichier de clé Firebase
+# --- CONFIG ---
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
+FIREBASE_KEY_PATH = "/etc/secrets/serviceAccountKey.json"  # chemin du secret file sur Render
+
+# --- INIT FIREBASE ---
+cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ====== CONFIGURATION DISCORD ======
-TOKEN = os.environ.get("DISCORD_TOKEN")  # Ton token dans Render
-CHANNEL_ID = 1402293997560401941  # ID du salon où poster le leaderboard
+# --- INIT BOT ---
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="/", intents=intents)
+intents.message_content = True  # nécessaire pour lire le contenu des messages si tu en as besoin
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-# ====== FONCTIONS FIREBASE ======
+# --- SCRAPING CLUB ---
+def scrape_club(club_tag):
+    """Retourne la liste des joueurs d'un club avec pseudo, id et trophées."""
+    clean_tag = club_tag.replace('#', '').upper()
+    url = f'https://brawlace.com/clubs/%23{clean_tag}'
+    response = requests.get(url)
+    html = response.text
 
-def save_scraped_data(club_name, players):
-    """
-    Enregistre les données scrapées dans Firestore.
-    players: liste de dicts {pseudo, tag, trophies_start, trophies_now}
-    """
-    club_ref = db.collection("clubs").document(club_name)
+    tr_regex = re.compile(r'<tr[^>]*>([\s\S]*?)</tr>', re.IGNORECASE)
+    td_regex = re.compile(r'<td[^>]*>([\s\S]*?)</td>', re.IGNORECASE)
+
+    result = []
+    for tr_match in tr_regex.finditer(html):
+        tds = [td.strip() for td in td_regex.findall(tr_match.group(1))]
+        if len(tds) >= 4:
+            # Pseudo
+            pseudo_match = re.search(r'<a[^>]*>(.*?)</a>', tds[1])
+            pseudo = pseudo_match.group(1).strip() if pseudo_match else re.sub(r'<[^>]+>', '', tds[1]).strip()
+            # ID
+            id_match = re.search(r'data-bs-player-tag=[\'"](#.*?)["\']', tds[1])
+            player_id = id_match.group(1).strip() if id_match else ""
+            # Trophées actuels
+            trophies = int(re.sub(r'[^\d]', '', tds[3]))
+            result.append({
+                "pseudo": pseudo,
+                "id": player_id,
+                "trophies": trophies
+            })
+    return result
+
+# --- FIREBASE UPDATE ---
+def update_firebase(club_tag):
+    players = scrape_club(club_tag)
     for player in players:
-        club_ref.collection("players").document(player["tag"]).set(player)
+        doc_ref = db.collection("players").document(player["id"])
+        doc_ref.set({
+            "pseudo": player["pseudo"],
+            "id": player["id"],
+            "trophées_actuels": player["trophies"],
+            "club": club_tag,
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        }, merge=True)  # merge=True pour ne pas écraser le document entier
 
+# --- COMMANDES ---
+@bot.slash_command(name="update", description="Met à jour les joueurs du club")
+async def update(ctx, club_tag: str):
+    await ctx.respond(f"Mise à jour du club {club_tag}...")
+    update_firebase(club_tag)
+    await ctx.send(f"Club {club_tag} mis à jour dans Firebase !")
 
-def get_leaderboard(club_name):
-    """
-    Récupère et trie les joueurs d'un club selon leur gain de trophées.
-    """
-    players_ref = db.collection("clubs").document(club_name).collection("players").stream()
-    players = [doc.to_dict() for doc in players_ref]
-    players.sort(key=lambda x: x["trophies_now"] - x["trophies_start"], reverse=True)
-    return players
+# --- TÂCHE AUTOMATIQUE (OPTIONNELLE) ---
+# @tasks.loop(hours=1)
+# async def auto_update():
+#     update_firebase("TON_CLUB_TAG")
 
-
-def get_player(tag):
-    """
-    Récupère les infos d'un joueur par son tag (peu importe le club).
-    """
-    clubs_ref = db.collection("clubs").stream()
-    for club in clubs_ref:
-        players_ref = db.collection("clubs").document(club.id).collection("players").stream()
-        for player in players_ref:
-            data = player.to_dict()
-            if data["tag"].lower() == tag.lower():
-                return data
-    return None
-
-# ====== COMMANDES DISCORD ======
-
-@bot.command(name="mytrophy")
-async def mytrophy(ctx, tag: str):
-    """Affiche les trophées actuels d'un joueur."""
-    player = get_player(tag)
-    if player:
-        gain = player["trophies_now"] - player["trophies_start"]
-        await ctx.send(f"🏆 **{player['pseudo']}**\n"
-                       f"Trophées actuels : {player['trophies_now']}\n"
-                       f"Gain ce mois-ci : {gain}")
-    else:
-        await ctx.send("❌ Joueur introuvable.")
-
-
-@bot.command(name="leaderboard")
-async def leaderboard(ctx):
-    """Affiche le meilleur rusheur de chaque club."""
-    clubs_ref = db.collection("clubs").stream()
-    leaderboard_msg = "**🏆 Meilleurs rusheurs par club :**\n"
-    for club in clubs_ref:
-        players = get_leaderboard(club.id)
-        if players:
-            best = players[0]
-            gain = best["trophies_now"] - best["trophies_start"]
-            leaderboard_msg += f"**{club.id}** → {best['pseudo']} (+{gain} trophées)\n"
-    await ctx.send(leaderboard_msg)
-
-# ====== TÂCHE AUTOMATIQUE ======
-
-@tasks.loop(hours=1)
-async def auto_leaderboard():
-    """Poste le leaderboard automatiquement toutes les heures."""
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel:
-        clubs_ref = db.collection("clubs").stream()
-        leaderboard_msg = "**🏆 Meilleurs rusheurs par club :**\n"
-        for club in clubs_ref:
-            players = get_leaderboard(club.id)
-            if players:
-                best = players[0]
-                gain = best["trophies_now"] - best["trophies_start"]
-                leaderboard_msg += f"**{club.id}** → {best['pseudo']} (+{gain} trophées)\n"
-        await channel.send(leaderboard_msg)
-
-@bot.event
-async def on_ready():
-    print(f"✅ Connecté en tant que {bot.user}")
-    auto_leaderboard.start()
-
-# ====== LANCEMENT ======
-bot.run(TOKEN)
+# --- RUN BOT ---
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)
