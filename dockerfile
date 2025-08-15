@@ -1,19 +1,17 @@
-# Utiliser une image Python
+# Dockerfile
 FROM python:3.11-slim
 
-# Créer un dossier de travail
 WORKDIR /app
 
-# Copier les fichiers
+# Copier seulement le code et requirements
 COPY requirements.txt .
 COPY main.py .
-COPY serviceAccountKey.json .
 
 # Installer les dépendances
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exposer le port pour Render
+# Exposer le port utilisé par Flask
 EXPOSE 8080
 
-# Lancer le bot
+# Commande pour lancer le bot
 CMD ["python", "main.py"]
