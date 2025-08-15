@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 # -------------------------------
 # CONFIG FIREBASE
 # -------------------------------
-FIREBASE_KEY_PATH = "laprairiebot-firebase-adminsdk-fbsvc-35e17418db.json"
+FIREBASE_KEY_PATH = "serviceAccountKey.json"
+
 
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
