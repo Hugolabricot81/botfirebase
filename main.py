@@ -9,16 +9,18 @@ import requests
 import os
 import re
 
-# -------------------------------
-# CONFIGURATION
-# -------------------------------
-DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")  # Token du bot
-FIREBASE_KEY_PATH = os.environ.get("serviceAccountKey.json")  # Chemin vers le secret file Firebase
+# Utiliser le secret file monté par Render
+FIREBASE_KEY_PATH = "/run/secrets/FIREBASE_KEY"
 
-# Initialisation Firebase
+# Vérification
+if not os.path.exists(FIREBASE_KEY_PATH):
+    raise ValueError(f"Le fichier Firebase n'existe pas à {FIREBASE_KEY_PATH}")
+
 cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
+
 db = firestore.client()
+
 
 # -------------------------------
 # SCRAPING FONCTION
