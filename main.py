@@ -194,7 +194,7 @@ class BrawlStarsBot:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept-Encoding': 'gzip, deflate, br',  # Support complet pour brotli
                 'DNT': '1',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
@@ -227,32 +227,14 @@ class BrawlStarsBot:
                 
                 logger.info(f"Tentative de scraping pour {url}")
                 
-                async with session.get(url, ssl=False) as response:
+                async with session.get(url, ssl=False, allow_redirects=True) as response:
                     logger.info(f"Status code: {response.status} pour {url}")
+                    logger.info(f"Content encoding: {response.headers.get('content-encoding', 'none')}")
                     
-                    if response.status == 403:
-                        logger.error(f"Accès refusé (403) pour {url}. Le site bloque probablement les bots.")
-                        
-                        # Essayer avec une approche différente - simuler plus de comportement humain
-                        await asyncio.sleep(5)  # Attendre plus longtemps
-                        
-                        # Essayer sans SSL
-                        try:
-                            async with session.get(url, ssl=False, allow_redirects=True) as retry_response:
-                                if retry_response.status == 200:
-                                    html = await retry_response.text()
-                                    logger.info(f"Succès après retry pour {url}")
-                                else:
-                                    logger.error(f"Retry échoué avec status {retry_response.status}")
-                                    return []
-                        except Exception as retry_error:
-                            logger.error(f"Erreur lors du retry: {retry_error}")
-                            return []
-                    
-                    elif response.status == 200:
+                    if response.status == 200:
+                        # Le décodage brotli devrait maintenant fonctionner
                         html = await response.text()
-                        logger.info(f"HTML récupéré avec succès pour {club_tag}")
-                    
+                        logger.info(f"HTML récupéré avec succès pour {club_tag}, taille: {len(html)}")
                     else:
                         logger.error(f"Erreur HTTP {response.status} pour {url}")
                         return []
