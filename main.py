@@ -29,13 +29,13 @@ class BrawlStarsBot:
         # Initialisation Firebase
         self.init_firebase()
         
-        # Configuration des clubs (à modifier selon vos clubs)
+        # Configuration des clubs
         self.clubs = {
-            "Prairie Fleurie": "#2C9Y28JPP",  # Remplacez par vos vrais tags de clubs
+            "Prairie Fleurie": "#2C9Y28JPP",
             "Prairie Céleste": "#2JUVYQ0YV",
-            "Prairie Gelée": "#2CJJLLUQ9",  # Remplacez par vos vrais tags de clubs
+            "Prairie Gelée": "#2CJJLLUQ9",
             "Prairie étoilée": "#29UPLG8QQ",
-            "Prairie Brulée": "#2YGPRQYCC",  # Remplacez par vos vrais tags de clubs
+            "Prairie Brulée": "#2YGPRQYCC",
             "Mini Prairie": "#JY89VGGP",
         }
         
@@ -239,9 +239,203 @@ class BrawlStarsBot:
                 
             except Exception as e:
                 logger.error(f"Erreur dans reset_debut_mois: {e}")
-                await interaction.followup.send("Une erreur s'est produite lors de la réinitialisation.")
+        @self.bot.tree.command(name="places_libres", description="Affiche le nombre de places libres dans chaque club")
+        async def places_libres(interaction: discord.Interaction):
+            await interaction.response.defer()
+            
+            try:
+                embed = discord.Embed(
+                    title="🌸 Places libres - Réseau Prairie",
+                    description="Nombre de places disponibles dans chaque club",
+                    color=0x2ecc71
+                )
+                
+                total_places_libres = 0
+                total_members = 0
+                
+                for club_name, club_tag in self.clubs.items():
+                    club_ref = self.db.collection('clubs').document(club_tag)
+                    club_doc = club_ref.get()
+                    
+                    if club_doc.exists:
+                        club_data = club_doc.to_dict()
+                        members = club_data.get('member_count', 0)
+                        places_libres = 30 - members
+                        
+                        total_members += members
+                        total_places_libres += places_libres
+                        
+                        # Emoji selon le nombre de places
+                        if places_libres == 0:
+                            emoji = "🔴"  # Complet
+                        elif places_libres <= 5:
+                            emoji = "🟡"  # Presque plein
+                        else:
+                            emoji = "🟢"  # Places disponibles
+                        
+                        embed.add_field(
+                            name=f"{emoji} {club_name}",
+                            value=f"**{places_libres}** place(s) libre(s)\n({members}/30 membres)",
+                            inline=True
+                        )
+                    else:
+                        embed.add_field(
+                            name=f"❓ {club_name}",
+                            value="Données non disponibles",
+                            inline=True
+                        )
+                
+                # Résumé total
+                embed.add_field(
+                    name="📊 Total Réseau Prairie",
+                    value=f"🟢 **{total_places_libres}** places libres au total\n👥 **{total_members}/180** membres",
+                    inline=False
+                )
+                
+                # Légende
+                embed.add_field(
+                    name="📝 Légende",
+                    value="🔴 Complet • 🟡 Presque plein (≤5 places) • 🟢 Places disponibles",
+                    inline=False
+                )
+                
+                # Footer avec dernière mise à jour
+                embed.set_footer(text="💡 Les données sont mises à jour toutes les heures")
+                
+                await interaction.followup.send(embed=embed)
+                
+            except Exception as e:
+                logger.error(f"Erreur dans places_libres: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de la récupération des places libres.")
     
-    async def scrape_club_data(self, club_tag):
+    async def scrape_club_info(self, club_tag):
+        """Scrape les informations générales d'un club depuis brawlace.com"""
+        try:
+            clean_tag = club_tag.replace('#', '').upper()
+            url = f'https://brawlace.com/clubs/%23{clean_tag}'
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0',
+                'Referer': 'https://brawlace.com/'
+            }
+            
+            connector = aiohttp.TCPConnector(
+                limit=100,
+                limit_per_host=30,
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+            )
+            
+            timeout = aiohttp.ClientTimeout(total=30, connect=10)
+            
+            async with aiohttp.ClientSession(
+                headers=headers, 
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                
+                await asyncio.sleep(2)
+                
+                logger.info(f"Scraping info club pour {url}")
+                
+                async with session.get(url, ssl=False, allow_redirects=True) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        logger.info(f"HTML club récupéré pour {club_tag}")
+                    else:
+                        logger.error(f"Erreur HTTP {response.status} pour club {url}")
+                        return None
+            
+            # Parser les informations du club
+            club_info = {
+                'tag': club_tag,
+                'name': '',
+                'total_trophies': 0,
+                'member_count': 0
+            }
+            
+            # Extraire le nom du club
+            name_patterns = [
+                r'<h1[^>]*>([^<]+)</h1>',
+                r'<title>([^<]*?)\s*-\s*Brawl Ace</title>',
+                r'class="club-name[^"]*">([^<]+)<',
+            ]
+            
+            for pattern in name_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    club_info['name'] = match.group(1).strip()
+                    break
+            
+            # Extraire les trophées totaux - chercher dans les divs/spans de statistiques
+            trophy_patterns = [
+                r'(?:total|club)\s*trophies?[^>]*>[\s\S]*?([0-9,]+)',
+                r'trophies?[^>]*>[\s\S]*?([0-9,]+)',
+                r'<span[^>]*trophies?[^>]*>([0-9,]+)',
+                r'<div[^>]*>[\s\S]*?([0-9,]{4,})',  # Chercher des nombres avec au moins 4 chiffres
+            ]
+            
+            for pattern in trophy_patterns:
+                matches = re.findall(pattern, html, re.IGNORECASE)
+                for match in matches:
+                    try:
+                        trophies = int(match.replace(',', ''))
+                        if trophies > 1000:  # Les clubs ont généralement plus de 1000 trophées
+                            club_info['total_trophies'] = trophies
+                            break
+                    except ValueError:
+                        continue
+                if club_info['total_trophies'] > 0:
+                    break
+            
+            # Extraire le nombre de membres - compter les lignes de joueurs
+            member_patterns = [
+                r'([0-9]+)\s*/\s*30\s*members?',
+                r'members?\s*[:\s]*([0-9]+)',
+            ]
+            
+            for pattern in member_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    try:
+                        club_info['member_count'] = int(match.group(1))
+                        break
+                    except ValueError:
+                        continue
+            
+            # Si pas trouvé, compter les lignes de tableau (méthode de fallback)
+            if club_info['member_count'] == 0:
+                tr_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
+                member_count = 0
+                
+                for tr_content in tr_matches:
+                    td_matches = re.findall(r'<td[^>]*>(.*?)</td>', tr_content, re.DOTALL | re.IGNORECASE)
+                    if len(td_matches) >= 4:
+                        # Vérifier si cette ligne contient un joueur
+                        player_cell = td_matches[1] if len(td_matches) > 1 else ""
+                        if 'data-bs-player-tag' in player_cell or '<a' in player_cell:
+                            member_count += 1
+                
+                club_info['member_count'] = member_count
+            
+            logger.info(f"Club info scrapé: {club_info['name']} ({club_info['tag']}) - {club_info['total_trophies']:,} trophées, {club_info['member_count']} membres")
+            return club_info
+            
+        except Exception as e:
+            logger.error(f"Erreur lors du scraping des infos club {club_tag}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
         """Scrape les données d'un club depuis brawlace.com"""
         try:
             clean_tag = club_tag.replace('#', '').upper()
@@ -385,6 +579,35 @@ class BrawlStarsBot:
                         if trophies <= 0:
                             logger.debug(f"Trophées invalides dans: {trophy_cell[:100]}")
             
+    async def update_club_info_in_firebase(self, club_info, club_name):
+        """Met à jour les informations du club dans Firebase"""
+        try:
+            if not club_info:
+                logger.warning(f"Pas d'informations club à mettre à jour pour {club_name}")
+                return
+            
+            current_time = datetime.now(timezone.utc)
+            
+            club_data = {
+                'name': club_name,
+                'tag': club_info['tag'],
+                'scraped_name': club_info['name'],  # Nom scrapé du site
+                'total_trophies': club_info['total_trophies'],
+                'member_count': club_info['member_count'],
+                'updatedAt': current_time
+            }
+            
+            # Utiliser le tag comme ID du document
+            club_ref = self.db.collection('clubs').document(club_info['tag'])
+            
+            # Vérifier si le club existe déjà
+            club_doc = club_ref.get()
+            if club_doc.exists:
+                club_ref.update(club_data)
+                logger.info(f"Club {club_name} mis à jour dans Firebase")
+            else:
+                club_ref.set(club_data)
+                logger.info(f"Club {club_name} créé dans Firebase")
             logger.info(f"Scrapé {len(players)} joueurs pour le club {club_tag}")
             
             # Si aucun joueur trouvé, log un échantillon du HTML pour debug
@@ -400,9 +623,10 @@ class BrawlStarsBot:
             return []
     
     async def scrape_and_update_club(self, club_tag, club_name):
-        """Scrape et met à jour les données d'un club dans Firebase (SANS toucher aux trophees_debut_mois)"""
+        """Scrape et met à jour les données d'un club dans Firebase (joueurs + infos club)"""
+        # Scraper les joueurs
         players_data = await self.scrape_club_data(club_tag)
-        updated_count = 0
+        updated_players = 0
         
         for player_data in players_data:
             try:
@@ -434,13 +658,17 @@ class BrawlStarsBot:
                     player_ref.set(new_player_data)
                     logger.debug(f"Nouveau joueur créé: {player_data['pseudo']} - trophees_debut_mois initialisé")
                 
-                updated_count += 1
+                updated_players += 1
                 
             except Exception as e:
                 logger.error(f"Erreur lors de la mise à jour du joueur {player_data['id']}: {e}")
         
-        logger.info(f"Mis à jour {updated_count} joueurs pour {club_name} (trophees_debut_mois préservés)")
-        return updated_count
+        # Scraper et mettre à jour les infos du club
+        club_info = await self.scrape_club_info(club_tag)
+        await self.update_club_info_in_firebase(club_info, club_name)
+        
+        logger.info(f"Mis à jour {updated_players} joueurs et infos pour le club {club_name}")
+        return updated_players
     
     async def get_best_rusher(self, club_name):
         """Trouve le meilleur rusheur d'un club"""
