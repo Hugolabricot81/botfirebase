@@ -239,6 +239,8 @@ class BrawlStarsBot:
                 
             except Exception as e:
                 logger.error(f"Erreur dans reset_debut_mois: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de la réinitialisation.")
+        
         @self.bot.tree.command(name="places_libres", description="Affiche le nombre de places libres dans chaque club")
         async def places_libres(interaction: discord.Interaction):
             await interaction.response.defer()
@@ -294,7 +296,7 @@ class BrawlStarsBot:
                 
                 # Légende
                 embed.add_field(
-                    name="📝 Légende",
+                    name="🔍 Légende",
                     value="🔴 Complet • 🟡 Presque plein (≤5 places) • 🟢 Places disponibles",
                     inline=False
                 )
@@ -436,6 +438,8 @@ class BrawlStarsBot:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             return None
+    
+    async def scrape_club_data(self, club_tag):
         """Scrape les données d'un club depuis brawlace.com"""
         try:
             clean_tag = club_tag.replace('#', '').upper()
@@ -445,7 +449,7 @@ class BrawlStarsBot:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',  # Support complet pour brotli
+                'Accept-Encoding': 'gzip, deflate, br',
                 'DNT': '1',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
@@ -579,6 +583,20 @@ class BrawlStarsBot:
                         if trophies <= 0:
                             logger.debug(f"Trophées invalides dans: {trophy_cell[:100]}")
             
+            logger.info(f"Scrapé {len(players)} joueurs pour le club {club_tag}")
+            
+            # Si aucun joueur trouvé, log un échantillon du HTML pour debug
+            if len(players) == 0 and len(html) > 0:
+                logger.warning(f"Aucun joueur trouvé. Échantillon HTML: {html[:1000]}")
+            
+            return players
+            
+        except Exception as e:
+            logger.error(f"Erreur lors du scraping de {club_tag}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
+    
     async def update_club_info_in_firebase(self, club_info, club_name):
         """Met à jour les informations du club dans Firebase"""
         try:
@@ -600,7 +618,7 @@ class BrawlStarsBot:
             # Utiliser le tag comme ID du document
             club_ref = self.db.collection('clubs').document(club_info['tag'])
             
-            # Vérifier si le club existe déjà
+            # Vérifier si le club existe déjà 
             club_doc = club_ref.get()
             if club_doc.exists:
                 club_ref.update(club_data)
@@ -608,19 +626,9 @@ class BrawlStarsBot:
             else:
                 club_ref.set(club_data)
                 logger.info(f"Club {club_name} créé dans Firebase")
-            logger.info(f"Scrapé {len(players)} joueurs pour le club {club_tag}")
-            
-            # Si aucun joueur trouvé, log un échantillon du HTML pour debug
-            if len(players) == 0 and len(html) > 0:
-                logger.warning(f"Aucun joueur trouvé. Échantillon HTML: {html[:1000]}")
-            
-            return players
-            
+                
         except Exception as e:
-            logger.error(f"Erreur lors du scraping de {club_tag}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return []
+            logger.error(f"Erreur lors de la mise à jour des infos club {club_name}: {e}")
     
     async def scrape_and_update_club(self, club_tag, club_name):
         """Scrape et met à jour les données d'un club dans Firebase (joueurs + infos club)"""
