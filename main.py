@@ -157,6 +157,11 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="update", description="Met à jour tous les joueurs d'un club")
         async def update_club(interaction: discord.Interaction, club_name: str):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             if club_name not in self.clubs:
@@ -186,6 +191,11 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="meilleur_rusheur", description="Affiche le meilleur rusheur de chaque club")
         async def meilleur_rusheur(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
@@ -218,6 +228,11 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="reset_debut_mois", description="Remet à jour les trophées de début de mois pour un club")
         async def reset_debut_mois(interaction: discord.Interaction, club_name: str):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             if club_name not in self.clubs:
@@ -265,6 +280,11 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="places_libres", description="Affiche le nombre de places libres dans chaque club")
         async def places_libres(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
@@ -334,6 +354,11 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="presentation", description="Affiche la présentation du réseau Prairie avec les trophées actuels")
         async def presentation(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
@@ -398,6 +423,11 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
         
         @self.bot.tree.command(name="set_rusheur_channel", description="Définit le canal pour l'envoi automatique des meilleurs rusheurs")
         async def set_rusheur_channel(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
@@ -419,6 +449,11 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
         
         @self.bot.tree.command(name="stop_rusheur_auto", description="Arrête l'envoi automatique des meilleurs rusheurs")
         async def stop_rusheur_auto(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
@@ -437,235 +472,9 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             except Exception as e:
                 logger.error(f"Erreur dans stop_rusheur_auto: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de l'arrêt de l'envoi automatique.")
-        
-        @self.bot.tree.command(name="test_rusheur_auto", description="Test manuel de l'envoi automatique des rusheurs")
-        async def test_rusheur_auto(interaction: discord.Interaction):
-            await interaction.response.defer()
-            
-            try:
-                # Configurer le canal actuel comme canal de rusheur temporairement pour le test
-                old_channel = self.rusheur_channel_id
-                self.rusheur_channel_id = interaction.channel.id
-                
-                # Exécuter manuellement la fonction
-                await self.auto_rusheur_update()
-                
-                # Restaurer l'ancien canal
-                self.rusheur_channel_id = old_channel
-                
-                await interaction.followup.send("✅ Test de l'envoi automatique des rusheurs terminé !")
-                
-            except Exception as e:
-                logger.error(f"Erreur dans test_rusheur_auto: {e}")
-                await interaction.followup.send(f"❌ Erreur lors du test: {str(e)}")
-        
-        @self.bot.tree.command(name="rusheur_status", description="Affiche le statut du système automatique des rusheurs")
-        async def rusheur_status(interaction: discord.Interaction):
-            await interaction.response.defer()
-            
-            try:
-                embed = discord.Embed(
-                    title="📊 Statut du système automatique des rusheurs",
-                    color=0x3498db
-                )
-                
-                # Statut du canal
-                if self.rusheur_channel_id:
-                    channel = self.bot.get_channel(self.rusheur_channel_id)
-                    if channel:
-                        embed.add_field(
-                            name="📺 Canal configuré",
-                            value=f"✅ {channel.mention} (ID: {self.rusheur_channel_id})",
-                            inline=False
-                        )
-                    else:
-                        embed.add_field(
-                            name="📺 Canal configuré",
-                            value=f"❌ Canal non trouvé (ID: {self.rusheur_channel_id})",
-                            inline=False
-                        )
-                else:
-                    embed.add_field(
-                        name="📺 Canal configuré",
-                        value="❌ Aucun canal configuré",
-                        inline=False
-                    )
-                
-                # Statut de la tâche automatique
-                if self.auto_rusheur_update.is_running():
-                    embed.add_field(
-                        name="🔄 Tâche automatique",
-                        value="✅ Active (toutes les 30 minutes)",
-                        inline=True
-                    )
-                    
-                    # Prochaine exécution
-                    if hasattr(self.auto_rusheur_update, 'next_iteration'):
-                        next_run = self.auto_rusheur_update.next_iteration
-                        if next_run:
-                            embed.add_field(
-                                name="⏰ Prochaine exécution",
-                                value=f"<t:{int(next_run.timestamp())}:R>",
-                                inline=True
-                            )
-                else:
-                    embed.add_field(
-                        name="🔄 Tâche automatique",
-                        value="❌ Inactive",
-                        inline=True
-                    )
-                
-                # Statut du dernier message
-                if self.last_rusheur_message:
-                    embed.add_field(
-                        name="💬 Dernier message",
-                        value=f"✅ Message ID: {self.last_rusheur_message.id}",
-                        inline=True
-                    )
-                else:
-                    embed.add_field(
-                        name="💬 Dernier message",
-                        value="❌ Aucun message récent",
-                        inline=True
-                    )
-                
-                await interaction.followup.send(embed=embed)
-                
-            except Exception as e:
-                logger.error(f"Erreur dans rusheur_status: {e}")
-                await interaction.followup.send("Une erreur s'est produite lors de la récupération du statut.")
     
     async def scrape_club_info(self, club_tag):
         """Scrape les informations générales d'un club depuis brawlace.com"""
-        try:
-            clean_tag = club_tag.replace('#', '').upper()
-            url = f'https://brawlace.com/clubs/%23{clean_tag}'
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0',
-                'Referer': 'https://brawlace.com/'
-            }
-            
-            connector = aiohttp.TCPConnector(
-                limit=100,
-                limit_per_host=30,
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-            )
-            
-            timeout = aiohttp.ClientTimeout(total=30, connect=10)
-            
-            async with aiohttp.ClientSession(
-                headers=headers, 
-                connector=connector,
-                timeout=timeout
-            ) as session:
-                
-                await asyncio.sleep(2)
-                
-                logger.info(f"Scraping info club pour {url}")
-                
-                async with session.get(url, ssl=False, allow_redirects=True) as response:
-                    if response.status == 200:
-                        html = await response.text()
-                        logger.info(f"HTML club récupéré pour {club_tag}")
-                    else:
-                        logger.error(f"Erreur HTTP {response.status} pour club {url}")
-                        return None
-            
-            # Parser les informations du club
-            club_info = {
-                'tag': club_tag,
-                'name': '',
-                'total_trophies': 0,
-                'member_count': 0
-            }
-            
-            # Extraire le nom du club
-            name_patterns = [
-                r'<h1[^>]*>([^<]+)</h1>',
-                r'<title>([^<]*?)\s*-\s*Brawl Ace</title>',
-                r'class="club-name[^"]*">([^<]+)<',
-            ]
-            
-            for pattern in name_patterns:
-                match = re.search(pattern, html, re.IGNORECASE)
-                if match:
-                    club_info['name'] = match.group(1).strip()
-                    break
-            
-            # Extraire les trophées totaux - chercher dans les divs/spans de statistiques
-            trophy_patterns = [
-                r'(?:total|club)\s*trophies?[^>]*>[\s\S]*?([0-9,]+)',
-                r'trophies?[^>]*>[\s\S]*?([0-9,]+)',
-                r'<span[^>]*trophies?[^>]*>([0-9,]+)',
-                r'<div[^>]*>[\s\S]*?([0-9,]{4,})',  # Chercher des nombres avec au moins 4 chiffres
-            ]
-            
-            for pattern in trophy_patterns:
-                matches = re.findall(pattern, html, re.IGNORECASE)
-                for match in matches:
-                    try:
-                        trophies = int(match.replace(',', ''))
-                        if trophies > 1000:  # Les clubs ont généralement plus de 1000 trophées
-                            club_info['total_trophies'] = trophies
-                            break
-                    except ValueError:
-                        continue
-                if club_info['total_trophies'] > 0:
-                    break
-            
-            # Extraire le nombre de membres - compter les lignes de joueurs
-            member_patterns = [
-                r'([0-9]+)\s*/\s*30\s*members?',
-                r'members?\s*[:\s]*([0-9]+)',
-            ]
-            
-            for pattern in member_patterns:
-                match = re.search(pattern, html, re.IGNORECASE)
-                if match:
-                    try:
-                        club_info['member_count'] = int(match.group(1))
-                        break
-                    except ValueError:
-                        continue
-            
-            # Si pas trouvé, compter les lignes de tableau (méthode de fallback)
-            if club_info['member_count'] == 0:
-                tr_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
-                member_count = 0
-                
-                for tr_content in tr_matches:
-                    td_matches = re.findall(r'<td[^>]*>(.*?)</td>', tr_content, re.DOTALL | re.IGNORECASE)
-                    if len(td_matches) >= 4:
-                        # Vérifier si cette ligne contient un joueur
-                        player_cell = td_matches[1] if len(td_matches) > 1 else ""
-                        if 'data-bs-player-tag' in player_cell or '<a' in player_cell:
-                            member_count += 1
-                
-                club_info['member_count'] = member_count
-            
-            logger.info(f"Club info scrapé: {club_info['name']} ({club_info['tag']}) - {club_info['total_trophies']:,} trophées, {club_info['member_count']} membres")
-            return club_info
-            
-        except Exception as e:
-            logger.error(f"Erreur lors du scraping des infos club {club_tag}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return None
-    
-    async def scrape_club_data(self, club_tag):
-        """Scrape les données d'un club depuis brawlace.com"""
         try:
             clean_tag = club_tag.replace('#', '').upper()
             url = f'https://brawlace.com/clubs/%23{clean_tag}'
@@ -1070,4 +879,133 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
 
 if __name__ == "__main__":
     bot = BrawlStarsBot()
-    bot.run()
+    bot.run()-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0',
+                'Referer': 'https://brawlace.com/'
+            }
+            
+            connector = aiohttp.TCPConnector(
+                limit=100,
+                limit_per_host=30,
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+            )
+            
+            timeout = aiohttp.ClientTimeout(total=30, connect=10)
+            
+            async with aiohttp.ClientSession(
+                headers=headers, 
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                
+                await asyncio.sleep(2)
+                
+                logger.info(f"Scraping info club pour {url}")
+                
+                async with session.get(url, ssl=False, allow_redirects=True) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        logger.info(f"HTML club récupéré pour {club_tag}")
+                    else:
+                        logger.error(f"Erreur HTTP {response.status} pour club {url}")
+                        return None
+            
+            # Parser les informations du club
+            club_info = {
+                'tag': club_tag,
+                'name': '',
+                'total_trophies': 0,
+                'member_count': 0
+            }
+            
+            # Extraire le nom du club
+            name_patterns = [
+                r'<h1[^>]*>([^<]+)</h1>',
+                r'<title>([^<]*?)\s*-\s*Brawl Ace</title>',
+                r'class="club-name[^"]*">([^<]+)<',
+            ]
+            
+            for pattern in name_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    club_info['name'] = match.group(1).strip()
+                    break
+            
+            # Extraire les trophées totaux - chercher dans les divs/spans de statistiques
+            trophy_patterns = [
+                r'(?:total|club)\s*trophies?[^>]*>[\s\S]*?([0-9,]+)',
+                r'trophies?[^>]*>[\s\S]*?([0-9,]+)',
+                r'<span[^>]*trophies?[^>]*>([0-9,]+)',
+                r'<div[^>]*>[\s\S]*?([0-9,]{4,})',  # Chercher des nombres avec au moins 4 chiffres
+            ]
+            
+            for pattern in trophy_patterns:
+                matches = re.findall(pattern, html, re.IGNORECASE)
+                for match in matches:
+                    try:
+                        trophies = int(match.replace(',', ''))
+                        if trophies > 1000:  # Les clubs ont généralement plus de 1000 trophées
+                            club_info['total_trophies'] = trophies
+                            break
+                    except ValueError:
+                        continue
+                if club_info['total_trophies'] > 0:
+                    break
+            
+            # Extraire le nombre de membres - compter les lignes de joueurs
+            member_patterns = [
+                r'([0-9]+)\s*/\s*30\s*members?',
+                r'members?\s*[:\s]*([0-9]+)',
+            ]
+            
+            for pattern in member_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    try:
+                        club_info['member_count'] = int(match.group(1))
+                        break
+                    except ValueError:
+                        continue
+            
+            # Si pas trouvé, compter les lignes de tableau (méthode de fallback)
+            if club_info['member_count'] == 0:
+                tr_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
+                member_count = 0
+                
+                for tr_content in tr_matches:
+                    td_matches = re.findall(r'<td[^>]*>(.*?)</td>', tr_content, re.DOTALL | re.IGNORECASE)
+                    if len(td_matches) >= 4:
+                        # Vérifier si cette ligne contient un joueur
+                        player_cell = td_matches[1] if len(td_matches) > 1 else ""
+                        if 'data-bs-player-tag' in player_cell or '<a' in player_cell:
+                            member_count += 1
+                
+                club_info['member_count'] = member_count
+            
+            logger.info(f"Club info scrapé: {club_info['name']} ({club_info['tag']}) - {club_info['total_trophies']:,} trophées, {club_info['member_count']} membres")
+            return club_info
+            
+        except Exception as e:
+            logger.error(f"Erreur lors du scraping des infos club {club_tag}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+    
+    async def scrape_club_data(self, club_tag):
+        """Scrape les données d'un club depuis brawlace.com"""
+        try:
+            clean_tag = club_tag.replace('#', '').upper()
+            url = f'https://brawlace.com/clubs/%23{clean_tag}'
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+                'Accept
