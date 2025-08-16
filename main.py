@@ -338,7 +338,7 @@ class BrawlStarsBot:
                 
                 # Légende
                 embed.add_field(
-                    name="🔍 Légende",
+                    name="📋 Légende",
                     value="🔴 Complet • 🟡 Presque plein (≤5 places) • 🟢 Places disponibles",
                     inline=False
                 )
@@ -475,6 +475,148 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
     
     async def scrape_club_info(self, club_tag):
         """Scrape les informations générales d'un club depuis brawlace.com"""
+        try:
+            clean_tag = club_tag.replace('#', '').upper()
+            url = f'https://brawlace.com/clubs/%23{clean_tag}'
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0',
+                'Referer': 'https://brawlace.com/'
+            }
+            
+            # Configuration du connecteur avec timeout plus long
+            connector = aiohttp.TCPConnector(
+                limit=100,
+                limit_per_host=30,
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+            )
+            
+            # Timeout configuration
+            timeout = aiohttp.ClientTimeout(total=30, connect=10)
+            
+            async with aiohttp.ClientSession(
+                headers=headers, 
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                
+                # Attendre un peu pour éviter d'être détecté comme bot
+                await asyncio.sleep(2)
+                
+                logger.info(f"Tentative de scraping pour {url}")
+                
+                async with session.get(url, ssl=False, allow_redirects=True) as response:
+                    logger.info(f"Status code: {response.status} pour {url}")
+                    logger.info(f"Content encoding: {response.headers.get('content-encoding', 'none')}")
+                    
+                    if response.status == 200:
+                        # Le décodage brotli devrait maintenant fonctionner
+                        html = await response.text()
+                        logger.info(f"HTML récupéré avec succès pour {club_tag}, taille: {len(html)}")
+                    else:
+                        logger.error(f"Erreur HTTP {response.status} pour {url}")
+                        return None
+            
+            logger.info(f"HTML récupéré pour {club_tag}, taille: {len(html)}")
+            
+            # Debug: sauvegarder un échantillon du HTML
+            if len(html) < 1000:
+                logger.warning(f"HTML très court pour {club_tag}: {html[:500]}")
+            
+            # Parser les informations du club
+            club_info = {
+                'tag': club_tag,
+                'name': '',
+                'total_trophies': 0,
+                'member_count': 0
+            }
+            
+            # Extraire le nom du club
+            name_patterns = [
+                r'<h1[^>]*>([^<]+)</h1>',
+                r'<title>([^<]*?)\s*-\s*Brawl Ace</title>',
+                r'class="club-name[^"]*">([^<]+)<',
+            ]
+            
+            for pattern in name_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    club_info['name'] = match.group(1).strip()
+                    break
+            
+            # Extraire les trophées totaux - chercher dans les divs/spans de statistiques
+            trophy_patterns = [
+                r'(?:total|club)\s*trophies?[^>]*>[\s\S]*?([0-9,]+)',
+                r'trophies?[^>]*>[\s\S]*?([0-9,]+)',
+                r'<span[^>]*trophies?[^>]*>([0-9,]+)',
+                r'<div[^>]*>[\s\S]*?([0-9,]{4,})',  # Chercher des nombres avec au moins 4 chiffres
+            ]
+            
+            for pattern in trophy_patterns:
+                matches = re.findall(pattern, html, re.IGNORECASE)
+                for match in matches:
+                    try:
+                        trophies = int(match.replace(',', ''))
+                        if trophies > 1000:  # Les clubs ont généralement plus de 1000 trophées
+                            club_info['total_trophies'] = trophies
+                            break
+                    except ValueError:
+                        continue
+                if club_info['total_trophies'] > 0:
+                    break
+            
+            # Extraire le nombre de membres - compter les lignes de joueurs
+            member_patterns = [
+                r'([0-9]+)\s*/\s*30\s*members?',
+                r'members?\s*[:\s]*([0-9]+)',
+            ]
+            
+            for pattern in member_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    try:
+                        club_info['member_count'] = int(match.group(1))
+                        break
+                    except ValueError:
+                        continue
+            
+            # Si pas trouvé, compter les lignes de tableau (méthode de fallback)
+            if club_info['member_count'] == 0:
+                tr_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
+                member_count = 0
+                
+                for tr_content in tr_matches:
+                    td_matches = re.findall(r'<td[^>]*>(.*?)</td>', tr_content, re.DOTALL | re.IGNORECASE)
+                    if len(td_matches) >= 4:
+                        # Vérifier si cette ligne contient un joueur
+                        player_cell = td_matches[1] if len(td_matches) > 1 else ""
+                        if 'data-bs-player-tag' in player_cell or '<a' in player_cell:
+                            member_count += 1
+                
+                club_info['member_count'] = member_count
+            
+            logger.info(f"Club info scrapé: {club_info['name']} ({club_info['tag']}) - {club_info['total_trophies']:,} trophées, {club_info['member_count']} membres")
+            return club_info
+            
+        except Exception as e:
+            logger.error(f"Erreur lors du scraping des infos club {club_tag}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+    
+    async def scrape_club_data(self, club_tag):
+        """Scrape les données d'un club depuis brawlace.com"""
         try:
             clean_tag = club_tag.replace('#', '').upper()
             url = f'https://brawlace.com/clubs/%23{clean_tag}'
@@ -827,9 +969,8 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                     )
             
             # Ajouter un footer avec l'heure de mise à jour
-            from datetime import datetime, timezone
             now = datetime.now(timezone.utc)
-            embed.set_footer(text=f"🕕 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC • {total_rusheurs} club(s) traité(s)")
+            embed.set_footer(text=f"🕑 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC • {total_rusheurs} club(s) traité(s)")
             
             # Envoyer le nouveau message
             try:
@@ -879,133 +1020,4 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
 
 if __name__ == "__main__":
     bot = BrawlStarsBot()
-    bot.run(),en;q=0.9,fr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0',
-                'Referer': 'https://brawlace.com/'
-            }
-            
-            connector = aiohttp.TCPConnector(
-                limit=100,
-                limit_per_host=30,
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-            )
-            
-            timeout = aiohttp.ClientTimeout(total=30, connect=10)
-            
-            async with aiohttp.ClientSession(
-                headers=headers, 
-                connector=connector,
-                timeout=timeout
-            ) as session:
-                
-                await asyncio.sleep(2)
-                
-                logger.info(f"Scraping info club pour {url}")
-                
-                async with session.get(url, ssl=False, allow_redirects=True) as response:
-                    if response.status == 200:
-                        html = await response.text()
-                        logger.info(f"HTML club récupéré pour {club_tag}")
-                    else:
-                        logger.error(f"Erreur HTTP {response.status} pour club {url}")
-                        return None
-            
-            # Parser les informations du club
-            club_info = {
-                'tag': club_tag,
-                'name': '',
-                'total_trophies': 0,
-                'member_count': 0
-            }
-            
-            # Extraire le nom du club
-            name_patterns = [
-                r'<h1[^>]*>([^<]+)</h1>',
-                r'<title>([^<]*?)\s*-\s*Brawl Ace</title>',
-                r'class="club-name[^"]*">([^<]+)<',
-            ]
-            
-            for pattern in name_patterns:
-                match = re.search(pattern, html, re.IGNORECASE)
-                if match:
-                    club_info['name'] = match.group(1).strip()
-                    break
-            
-            # Extraire les trophées totaux - chercher dans les divs/spans de statistiques
-            trophy_patterns = [
-                r'(?:total|club)\s*trophies?[^>]*>[\s\S]*?([0-9,]+)',
-                r'trophies?[^>]*>[\s\S]*?([0-9,]+)',
-                r'<span[^>]*trophies?[^>]*>([0-9,]+)',
-                r'<div[^>]*>[\s\S]*?([0-9,]{4,})',  # Chercher des nombres avec au moins 4 chiffres
-            ]
-            
-            for pattern in trophy_patterns:
-                matches = re.findall(pattern, html, re.IGNORECASE)
-                for match in matches:
-                    try:
-                        trophies = int(match.replace(',', ''))
-                        if trophies > 1000:  # Les clubs ont généralement plus de 1000 trophées
-                            club_info['total_trophies'] = trophies
-                            break
-                    except ValueError:
-                        continue
-                if club_info['total_trophies'] > 0:
-                    break
-            
-            # Extraire le nombre de membres - compter les lignes de joueurs
-            member_patterns = [
-                r'([0-9]+)\s*/\s*30\s*members?',
-                r'members?\s*[:\s]*([0-9]+)',
-            ]
-            
-            for pattern in member_patterns:
-                match = re.search(pattern, html, re.IGNORECASE)
-                if match:
-                    try:
-                        club_info['member_count'] = int(match.group(1))
-                        break
-                    except ValueError:
-                        continue
-            
-            # Si pas trouvé, compter les lignes de tableau (méthode de fallback)
-            if club_info['member_count'] == 0:
-                tr_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
-                member_count = 0
-                
-                for tr_content in tr_matches:
-                    td_matches = re.findall(r'<td[^>]*>(.*?)</td>', tr_content, re.DOTALL | re.IGNORECASE)
-                    if len(td_matches) >= 4:
-                        # Vérifier si cette ligne contient un joueur
-                        player_cell = td_matches[1] if len(td_matches) > 1 else ""
-                        if 'data-bs-player-tag' in player_cell or '<a' in player_cell:
-                            member_count += 1
-                
-                club_info['member_count'] = member_count
-            
-            logger.info(f"Club info scrapé: {club_info['name']} ({club_info['tag']}) - {club_info['total_trophies']:,} trophées, {club_info['member_count']} membres")
-            return club_info
-            
-        except Exception as e:
-            logger.error(f"Erreur lors du scraping des infos club {club_tag}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return None
-    
-    async def scrape_club_data(self, club_tag):
-        """Scrape les données d'un club depuis brawlace.com"""
-        try:
-            clean_tag = club_tag.replace('#', '').upper()
-            url = f'https://brawlace.com/clubs/%23{clean_tag}'
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US
+    bot.run()
