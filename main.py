@@ -46,8 +46,22 @@ class BrawlStarsBot:
         self.last_rusheur_message = None
         self.rusheur_channel_id = None  # À configurer via une commande
         
+        # ID du rôle Modo
+        self.MODO_ROLE_ID = 1185678999335219311
+        
         self.setup_discord_events()
         self.setup_flask_routes()
+    
+    def has_modo_role(self, interaction: discord.Interaction) -> bool:
+        """Vérifie si l'utilisateur a le rôle Modo"""
+        if not interaction.guild:
+            return False
+        
+        member = interaction.guild.get_member(interaction.user.id)
+        if not member:
+            return False
+        
+        return any(role.id == self.MODO_ROLE_ID for role in member.roles)
         
     def init_firebase(self):
         """Initialise Firebase avec le secret file"""
@@ -143,6 +157,16 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="update", description="Met à jour tous les joueurs d'un club")
         async def update_club(interaction: discord.Interaction, club_name: str):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                embed = discord.Embed(
+                    title="🚫 Accès refusé",
+                    description="Cette commande est réservée aux membres ayant le rôle **Modo 🪻**.",
+                    color=0xff0000
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             if club_name not in self.clubs:
@@ -251,6 +275,16 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="places_libres", description="Affiche le nombre de places libres dans chaque club")
         async def places_libres(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                embed = discord.Embed(
+                    title="🚫 Accès refusé",
+                    description="Cette commande est réservée aux membres ayant le rôle **Modo 🪻**.",
+                    color=0xff0000
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
@@ -277,11 +311,11 @@ class BrawlStarsBot:
                         
                         # Emoji selon le nombre de places
                         if places_libres == 0:
-                            emoji = "🔴"  # Complet
+                            emoji = "🟢"  # Complet
                         elif places_libres <= 5:
                             emoji = "🟡"  # Presque plein
                         else:
-                            emoji = "🟢"  # Places disponibles
+                            emoji = "🔴"  # Places disponibles
                         
                         embed.add_field(
                             name=f"{emoji} {club_name}",
@@ -320,6 +354,16 @@ class BrawlStarsBot:
         
         @self.bot.tree.command(name="presentation", description="Affiche la présentation du réseau Prairie avec les trophées actuels")
         async def presentation(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                embed = discord.Embed(
+                    title="🚫 Accès refusé",
+                    description="Cette commande est réservée aux membres ayant le rôle **Modo 🪻**.",
+                    color=0xff0000
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
@@ -405,6 +449,16 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
         
         @self.bot.tree.command(name="stop_rusheur_auto", description="Arrête l'envoi automatique des meilleurs rusheurs")
         async def stop_rusheur_auto(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                embed = discord.Embed(
+                    title="🚫 Accès refusé",
+                    description="Cette commande est réservée aux membres ayant le rôle **Modo 🪻**.",
+                    color=0xff0000
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+                
             await interaction.response.defer()
             
             try:
