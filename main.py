@@ -884,7 +884,7 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
         
         logger.info("Mise à jour automatique terminée")
     
-    @tasks.loop(minutes=30)  # Toutes les 30 minutes
+    @tasks.loop(minutes=1)  # Toutes les 30 minutes
     async def auto_rusheur_update(self):
         """Envoie automatiquement les meilleurs rusheurs toutes les demi-heures"""
         if not self.rusheur_channel_id:
