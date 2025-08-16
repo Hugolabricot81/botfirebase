@@ -31,8 +31,12 @@ class BrawlStarsBot:
         
         # Configuration des clubs (à modifier selon vos clubs)
         self.clubs = {
-            "Club1": "#2YGPRQYCC",  # Remplacez par vos vrais tags de clubs
-            "Club2": "#AUTRE_TAG",
+            "Prairie Fleurie": "#2C9Y28JPP",  # Remplacez par vos vrais tags de clubs
+            "Prairie Céleste": "#2JUVYQ0YV",
+            "Prairie Gelée": "#2CJJLLUQ9",  # Remplacez par vos vrais tags de clubs
+            "Prairie étoilée": "#29UPLG8QQ",
+            "Prairie Brulée": "#2YGPRQYCC",  # Remplacez par vos vrais tags de clubs
+            "Mini Prairie": "#JY89VGGP",
         }
         
         # Flask pour le ping d'Uptime Robot
