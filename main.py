@@ -367,7 +367,7 @@ class BrawlStarsBot:
                     "Prairie Fleurie": {"emoji": "🌸", "seuil": "60k", "tag": "#2C9Y28JPP"},
                     "Prairie Céleste": {"emoji": "🪽", "seuil": "60k", "tag": "#2JUVYQ0YV"},
                     "Prairie Gelée": {"emoji": "❄️", "seuil": "60k", "tag": "#2CJJLLUQ9"},
-                    "Prairie étoilée": {"emoji": "⭐️", "seuil": "55k", "tag": "#29UPLG8QQ"},
+                    "Prairie étoilée": {"emoji": "⭐", "seuil": "55k", "tag": "#29UPLG8QQ"},
                     "Prairie Brulée": {"emoji": "🔥", "seuil": "45k", "tag": "#2YGPRQYCC"},
                     "Mini Prairie": {"emoji": "🧚", "seuil": "3k", "tag": "#JY89VGGP", "note": " (Club pour les smurfs)"}
                 }
@@ -829,7 +829,7 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             # Ajouter un footer avec l'heure de mise à jour
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc)
-            embed.set_footer(text=f"🕐 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC • {total_rusheurs} club(s) traité(s)")
+            embed.set_footer(text=f"🕕 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC • {total_rusheurs} club(s) traité(s)")
             
             # Envoyer le nouveau message
             try:
@@ -879,7 +879,8 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
 
 if __name__ == "__main__":
     bot = BrawlStarsBot()
-    bot.run()-Encoding': 'gzip, deflate, br',
+    bot.run(),en;q=0.9,fr;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
                 'DNT': '1',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
@@ -1007,5 +1008,4 @@ if __name__ == "__main__":
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-                'Accept
+                'Accept-Language': 'en-US
