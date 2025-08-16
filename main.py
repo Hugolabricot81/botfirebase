@@ -311,11 +311,11 @@ class BrawlStarsBot:
                         
                         # Emoji selon le nombre de places
                         if places_libres == 0:
-                            emoji = "🟢"  # Complet
+                            emoji = "🔴"  # Complet
                         elif places_libres <= 5:
                             emoji = "🟡"  # Presque plein
                         else:
-                            emoji = "🔴"  # Places disponibles
+                            emoji = "🟢"  # Places disponibles
                         
                         embed.add_field(
                             name=f"{emoji} {club_name}",
@@ -374,7 +374,7 @@ class BrawlStarsBot:
                     "Prairie Gelée": {"emoji": "❄️", "seuil": "60k", "tag": "#2CJJLLUQ9"},
                     "Prairie étoilée": {"emoji": "⭐️", "seuil": "55k", "tag": "#29UPLG8QQ"},
                     "Prairie Brulée": {"emoji": "🔥", "seuil": "45k", "tag": "#2YGPRQYCC"},
-                    "Mini Prairie": {"emoji": "🧒", "seuil": "3k", "tag": "#JY89VGGP", "note": " (Club pour les smurfs)"}
+                    "Mini Prairie": {"emoji": "🧚", "seuil": "3k", "tag": "#JY89VGGP", "note": " (Club pour les smurfs)"}
                 }
                 
                 # Récupérer les trophées de chaque club
@@ -395,15 +395,15 @@ class BrawlStarsBot:
                             trophies_display = f"{total_trophies / 1000:.0f}k"
                         
                         note = info.get('note', '')
-                        clubs_text.append(f"{club_name} {info['emoji']} {trophies_display} 🏆 : à partir de {info['seuil']}.{note}")
+                        clubs_text.append(f"{club_name} {info['emoji']} {trophies_display} 🏆 : À partir de {info['seuil']}.{note}")
                     else:
-                        clubs_text.append(f"{club_name} {info['emoji']} ?.??M 🏆 : à partir de {info['seuil']}. (données non disponibles)")
+                        clubs_text.append(f"{club_name} {info['emoji']} ?.??M 🏆 : À partir de {info['seuil']}. (données non disponibles)")
                 
                 # Construire le texte complet
                 presentation_text = f"""Bonjour à toutes et à tous ! 🌱🌸
 Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
 {chr(10).join(clubs_text)}
-- Nous avons un Discord actif où l'on priorise entraide et convivialité entre tous. Vous pourrez y passer de bons moments et également lors de nos futurs projets d'animation (mini jeux bs 🏆 rush pig entre clubs 🐷 activés diverses et variées ex : gartic phone, among us 👾)
+- Nous avons un Discord actif où l'on priorise entraide et convivialité entre tous. Vous pourrez y passer de bons moments et également lors de nos futurs projets d'animation (mini jeux bs 🏆 rush pig entre clubs 🐷 activées diverses et variées ex : gartic phone, among us 👾)
 - Vous devrez vous montrer actif sur Brawl Stars et si vous l'êtes aussi sur le discord ça sera plus qu'apprécié ✅🐷 L'activité en mega pig est surveillée, un minimum est fixée (infos sur notre Discord). Toutes les méga pigs sont à 5/5 en fin d'événement ! 🐷
 - On ne vous vire pas si vous êtes le dernier du club. Nous fixons des objectifs de trophées à atteindre par saison, qui sont différents selon les clubs et qui peuvent être adaptés à chaque membre. Nous sommes flexibles et compréhensifs tant qu'il y a un minimum d'activité sur Brawl Stars 🌱✨
 • Rejoignez notre grande et belle famille dans laquelle vous pourrez push les TR 🏆 et la Ranked 💎, tout en passant de bons moments ! 🌱🌸
@@ -477,6 +477,123 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             except Exception as e:
                 logger.error(f"Erreur dans stop_rusheur_auto: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de l'arrêt de l'envoi automatique.")
+        
+        @self.bot.tree.command(name="test_rusheur_auto", description="Test manuel de l'envoi automatique des rusheurs")
+        async def test_rusheur_auto(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                embed = discord.Embed(
+                    title="🚫 Accès refusé",
+                    description="Cette commande est réservée aux membres ayant le rôle **Modo 🪻**.",
+                    color=0xff0000
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+                
+            await interaction.response.defer()
+            
+            try:
+                # Configurer le canal actuel comme canal de rusheur temporairement pour le test
+                old_channel = self.rusheur_channel_id
+                self.rusheur_channel_id = interaction.channel.id
+                
+                # Exécuter manuellement la fonction
+                await self.auto_rusheur_update()
+                
+                # Restaurer l'ancien canal
+                self.rusheur_channel_id = old_channel
+                
+                await interaction.followup.send("✅ Test de l'envoi automatique des rusheurs terminé !")
+                
+            except Exception as e:
+                logger.error(f"Erreur dans test_rusheur_auto: {e}")
+                await interaction.followup.send(f"❌ Erreur lors du test: {str(e)}")
+        
+        @self.bot.tree.command(name="rusheur_status", description="Affiche le statut du système automatique des rusheurs")
+        async def rusheur_status(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                embed = discord.Embed(
+                    title="🚫 Accès refusé",
+                    description="Cette commande est réservée aux membres ayant le rôle **Modo 🪻**.",
+                    color=0xff0000
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+                
+            await interaction.response.defer()
+            
+            try:
+                embed = discord.Embed(
+                    title="📊 Statut du système automatique des rusheurs",
+                    color=0x3498db
+                )
+                
+                # Statut du canal
+                if self.rusheur_channel_id:
+                    channel = self.bot.get_channel(self.rusheur_channel_id)
+                    if channel:
+                        embed.add_field(
+                            name="📺 Canal configuré",
+                            value=f"✅ {channel.mention} (ID: {self.rusheur_channel_id})",
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(
+                            name="📺 Canal configuré",
+                            value=f"❌ Canal non trouvé (ID: {self.rusheur_channel_id})",
+                            inline=False
+                        )
+                else:
+                    embed.add_field(
+                        name="📺 Canal configuré",
+                        value="❌ Aucun canal configuré",
+                        inline=False
+                    )
+                
+                # Statut de la tâche automatique
+                if self.auto_rusheur_update.is_running():
+                    embed.add_field(
+                        name="🔄 Tâche automatique",
+                        value="✅ Active (toutes les 30 minutes)",
+                        inline=True
+                    )
+                    
+                    # Prochaine exécution
+                    if hasattr(self.auto_rusheur_update, 'next_iteration'):
+                        next_run = self.auto_rusheur_update.next_iteration
+                        if next_run:
+                            embed.add_field(
+                                name="⏰ Prochaine exécution",
+                                value=f"<t:{int(next_run.timestamp())}:R>",
+                                inline=True
+                            )
+                else:
+                    embed.add_field(
+                        name="🔄 Tâche automatique",
+                        value="❌ Inactive",
+                        inline=True
+                    )
+                
+                # Statut du dernier message
+                if self.last_rusheur_message:
+                    embed.add_field(
+                        name="💬 Dernier message",
+                        value=f"✅ Message ID: {self.last_rusheur_message.id}",
+                        inline=True
+                    )
+                else:
+                    embed.add_field(
+                        name="💬 Dernier message",
+                        value="❌ Aucun message récent",
+                        inline=True
+                    )
+                
+                await interaction.followup.send(embed=embed)
+                
+            except Exception as e:
+                logger.error(f"Erreur dans rusheur_status: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de la récupération du statut.")
     
     async def scrape_club_info(self, club_tag):
         """Scrape les informations générales d'un club depuis brawlace.com"""
@@ -884,19 +1001,21 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
         
         logger.info("Mise à jour automatique terminée")
     
-    @tasks.loop(minutes=1)  # Toutes les 30 minutes
+    @tasks.loop(minutes=30)  # Toutes les 30 minutes
     async def auto_rusheur_update(self):
         """Envoie automatiquement les meilleurs rusheurs toutes les demi-heures"""
         if not self.rusheur_channel_id:
+            logger.info("Pas de canal rusheur configuré, skip")
             return  # Pas de canal configuré
         
         try:
             channel = self.bot.get_channel(self.rusheur_channel_id)
             if not channel:
                 logger.error(f"Canal rusheur non trouvé: {self.rusheur_channel_id}")
+                self.rusheur_channel_id = None  # Reset si le canal n'existe plus
                 return
             
-            logger.info("Début de l'envoi automatique des meilleurs rusheurs")
+            logger.info(f"Début de l'envoi automatique des meilleurs rusheurs dans {channel.name}")
             
             # Supprimer le message précédent s'il existe
             if self.last_rusheur_message:
@@ -904,59 +1023,89 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                     await self.last_rusheur_message.delete()
                     logger.info("Ancien message des rusheurs supprimé")
                 except discord.NotFound:
-                    logger.warning("Ancien message des rusheurs déjà supprimé")
+                    logger.info("Ancien message des rusheurs déjà supprimé")
                 except discord.Forbidden:
                     logger.error("Permissions insuffisantes pour supprimer l'ancien message")
                 except Exception as e:
                     logger.error(f"Erreur lors de la suppression de l'ancien message: {e}")
+                finally:
+                    self.last_rusheur_message = None
             
             # Créer l'embed des meilleurs rusheurs
             embed = discord.Embed(
                 title="🚀 Meilleurs rusheurs du mois",
+                description="Mise à jour automatique toutes les 30 minutes",
                 color=0xffd700
             )
             
             rusheurs_found = False
+            total_rusheurs = 0
             
             for club_name in self.clubs.keys():
-                best_player = await self.get_best_rusher(club_name)
-                if best_player:
-                    diff = best_player['trophees_actuels'] - best_player['trophees_debut_mois']
+                try:
+                    best_player = await self.get_best_rusher(club_name)
+                    if best_player:
+                        diff = best_player['trophees_actuels'] - best_player['trophees_debut_mois']
+                        if diff >= 0:  # Ne afficher que les gains positifs ou nuls
+                            embed.add_field(
+                                name=f"🏆 {club_name}",
+                                value=f"**{best_player['pseudo']}**\n+{diff:,} trophées",
+                                inline=True
+                            )
+                            rusheurs_found = True
+                            total_rusheurs += 1
+                            logger.info(f"Rusheur trouvé pour {club_name}: {best_player['pseudo']} (+{diff})")
+                        else:
+                            embed.add_field(
+                                name=f"📉 {club_name}",
+                                value=f"**{best_player['pseudo']}**\n{diff:,} trophées",
+                                inline=True
+                            )
+                            total_rusheurs += 1
+                    else:
+                        embed.add_field(
+                            name=f"❌ {club_name}",
+                            value="Aucun joueur trouvé",
+                            inline=True
+                        )
+                        logger.warning(f"Aucun rusheur trouvé pour {club_name}")
+                except Exception as e:
+                    logger.error(f"Erreur lors de la récupération du rusheur pour {club_name}: {e}")
                     embed.add_field(
-                        name=f"🏆 {club_name}",
-                        value=f"**{best_player['pseudo']}**\n+{diff:,} trophées",
-                        inline=True
-                    )
-                    rusheurs_found = True
-                else:
-                    embed.add_field(
-                        name=f"❌ {club_name}",
-                        value="Aucun joueur trouvé",
+                        name=f"⚠️ {club_name}",
+                        value="Erreur de récupération",
                         inline=True
                     )
             
-            if rusheurs_found:
-                # Ajouter un footer avec l'heure de mise à jour
-                from datetime import datetime, timezone
-                now = datetime.now(timezone.utc)
-                embed.set_footer(text=f"🕐 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC")
-                
-                # Envoyer le nouveau message
+            # Ajouter un footer avec l'heure de mise à jour
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            embed.set_footer(text=f"🕐 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC • {total_rusheurs} club(s) traité(s)")
+            
+            # Envoyer le nouveau message
+            try:
                 self.last_rusheur_message = await channel.send(embed=embed)
-                logger.info(f"Nouveaux meilleurs rusheurs envoyés dans {channel.name}")
-            else:
-                logger.warning("Aucun rusheur trouvé, message non envoyé")
+                logger.info(f"Message des meilleurs rusheurs envoyé avec succès dans {channel.name} (ID: {self.last_rusheur_message.id})")
+            except discord.Forbidden:
+                logger.error(f"Permissions insuffisantes pour envoyer un message dans {channel.name}")
+                self.rusheur_channel_id = None  # Reset le canal si pas de permissions
+            except discord.HTTPException as e:
+                logger.error(f"Erreur HTTP lors de l'envoi du message: {e}")
+            except Exception as e:
+                logger.error(f"Erreur inattendue lors de l'envoi du message: {e}")
                 
         except Exception as e:
-            logger.error(f"Erreur lors de l'envoi automatique des rusheurs: {e}")
+            logger.error(f"Erreur générale lors de l'envoi automatique des rusheurs: {e}")
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback complet: {traceback.format_exc()}")
     
     @auto_rusheur_update.before_loop
     async def before_auto_rusheur_update(self):
         """Attend que le bot soit prêt avant de démarrer l'envoi automatique"""
         await self.bot.wait_until_ready()
-        logger.info("Bot prêt, l'envoi automatique des rusheurs peut démarrer")
+        logger.info("Bot prêt, l'envoi automatique des rusheurs peut démarrer dans 30 minutes")
+        # Optionnel: attendre encore un peu pour être sûr que tout est initialisé
+        await asyncio.sleep(10)
     
     def run_flask(self):
         """Lance le serveur Flask"""
