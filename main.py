@@ -42,6 +42,10 @@ class BrawlStarsBot:
         # Flask pour le ping d'Uptime Robot
         self.app = Flask(__name__)
         
+        # Variable pour stocker le dernier message des rusheurs
+        self.last_rusheur_message = None
+        self.rusheur_channel_id = None  # À configurer via une commande
+        
         self.setup_discord_events()
         self.setup_flask_routes()
         
@@ -85,6 +89,10 @@ class BrawlStarsBot:
             # Démarrer la mise à jour automatique
             self.auto_update.start()
             logger.info("Mise à jour automatique programmée toutes les heures")
+            
+            # Démarrer l'envoi automatique des meilleurs rusheurs
+            self.auto_rusheur_update.start()
+            logger.info("Envoi automatique des meilleurs rusheurs programmé toutes les demi-heures")
         
         @self.bot.tree.command(name="mytrophy", description="Affiche vos trophées actuels")
         async def mytrophy(interaction: discord.Interaction, player_id: str):
@@ -309,6 +317,112 @@ class BrawlStarsBot:
             except Exception as e:
                 logger.error(f"Erreur dans places_libres: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de la récupération des places libres.")
+        
+        @self.bot.tree.command(name="presentation", description="Affiche la présentation du réseau Prairie avec les trophées actuels")
+        async def presentation(interaction: discord.Interaction):
+            await interaction.response.defer()
+            
+            try:
+                # Mapping des clubs avec leurs emojis et seuils
+                clubs_info = {
+                    "Prairie Fleurie": {"emoji": "🌸", "seuil": "60k", "tag": "#2C9Y28JPP"},
+                    "Prairie Céleste": {"emoji": "🪽", "seuil": "60k", "tag": "#2JUVYQ0YV"},
+                    "Prairie Gelée": {"emoji": "❄️", "seuil": "60k", "tag": "#2CJJLLUQ9"},
+                    "Prairie étoilée": {"emoji": "⭐️", "seuil": "55k", "tag": "#29UPLG8QQ"},
+                    "Prairie Brulée": {"emoji": "🔥", "seuil": "45k", "tag": "#2YGPRQYCC"},
+                    "Mini Prairie": {"emoji": "🧒", "seuil": "3k", "tag": "#JY89VGGP", "note": " (Club pour les smurfs)"}
+                }
+                
+                # Récupérer les trophées de chaque club
+                clubs_text = []
+                
+                for club_name, info in clubs_info.items():
+                    club_ref = self.db.collection('clubs').document(info['tag'])
+                    club_doc = club_ref.get()
+                    
+                    if club_doc.exists:
+                        club_data = club_doc.to_dict()
+                        total_trophies = club_data.get('total_trophies', 0)
+                        
+                        # Convertir en millions et arrondir au centième
+                        if total_trophies >= 1000000:
+                            trophies_display = f"{total_trophies / 1000000:.2f}M"
+                        else:
+                            trophies_display = f"{total_trophies / 1000:.0f}k"
+                        
+                        note = info.get('note', '')
+                        clubs_text.append(f"{club_name} {info['emoji']} {trophies_display} 🏆 : à partir de {info['seuil']}.{note}")
+                    else:
+                        clubs_text.append(f"{club_name} {info['emoji']} ?.??M 🏆 : à partir de {info['seuil']}. (données non disponibles)")
+                
+                # Construire le texte complet
+                presentation_text = f"""Bonjour à toutes et à tous ! 🌱🌸
+Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
+{chr(10).join(clubs_text)}
+- Nous avons un Discord actif où l'on priorise entraide et convivialité entre tous. Vous pourrez y passer de bons moments et également lors de nos futurs projets d'animation (mini jeux bs 🏆 rush pig entre clubs 🐷 activés diverses et variées ex : gartic phone, among us 👾)
+- Vous devrez vous montrer actif sur Brawl Stars et si vous l'êtes aussi sur le discord ça sera plus qu'apprécié ✅🐷 L'activité en mega pig est surveillée, un minimum est fixée (infos sur notre Discord). Toutes les méga pigs sont à 5/5 en fin d'événement ! 🐷
+- On ne vous vire pas si vous êtes le dernier du club. Nous fixons des objectifs de trophées à atteindre par saison, qui sont différents selon les clubs et qui peuvent être adaptés à chaque membre. Nous sommes flexibles et compréhensifs tant qu'il y a un minimum d'activité sur Brawl Stars 🌱✨
+• Rejoignez notre grande et belle famille dans laquelle vous pourrez push les TR 🏆 et la Ranked 💎, tout en passant de bons moments ! 🌱🌸
+--
+(MP si intéressé par un de nos clubs 🤝)."""
+                
+                # Utiliser un embed pour une meilleure présentation
+                embed = discord.Embed(
+                    title="🌸 Présentation - Réseau Prairie 🌸",
+                    description=presentation_text,
+                    color=0x90EE90
+                )
+                
+                # Footer avec dernière mise à jour
+                embed.set_footer(text="💡 Trophées mis à jour automatiquement toutes les heures")
+                
+                await interaction.followup.send(embed=embed)
+                
+            except Exception as e:
+                logger.error(f"Erreur dans presentation: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de la génération de la présentation.")
+        
+        @self.bot.tree.command(name="set_rusheur_channel", description="Définit le canal pour l'envoi automatique des meilleurs rusheurs")
+        async def set_rusheur_channel(interaction: discord.Interaction):
+            await interaction.response.defer()
+            
+            try:
+                self.rusheur_channel_id = interaction.channel.id
+                
+                embed = discord.Embed(
+                    title="✅ Canal configuré",
+                    description=f"Les meilleurs rusheurs seront maintenant envoyés automatiquement dans ce canal toutes les demi-heures.",
+                    color=0x00ff00
+                )
+                embed.set_footer(text="💡 Pour arrêter l'envoi automatique, utilisez /stop_rusheur_auto")
+                
+                await interaction.followup.send(embed=embed)
+                logger.info(f"Canal des rusheurs configuré: {interaction.channel.name} (ID: {interaction.channel.id})")
+                
+            except Exception as e:
+                logger.error(f"Erreur dans set_rusheur_channel: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de la configuration du canal.")
+        
+        @self.bot.tree.command(name="stop_rusheur_auto", description="Arrête l'envoi automatique des meilleurs rusheurs")
+        async def stop_rusheur_auto(interaction: discord.Interaction):
+            await interaction.response.defer()
+            
+            try:
+                self.rusheur_channel_id = None
+                self.last_rusheur_message = None
+                
+                embed = discord.Embed(
+                    title="🛑 Envoi automatique arrêté",
+                    description="L'envoi automatique des meilleurs rusheurs a été désactivé.",
+                    color=0xff9900
+                )
+                
+                await interaction.followup.send(embed=embed)
+                logger.info("Envoi automatique des rusheurs arrêté")
+                
+            except Exception as e:
+                logger.error(f"Erreur dans stop_rusheur_auto: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de l'arrêt de l'envoi automatique.")
     
     async def scrape_club_info(self, club_tag):
         """Scrape les informations générales d'un club depuis brawlace.com"""
@@ -715,6 +829,80 @@ class BrawlStarsBot:
                 logger.error(f"Erreur lors de la mise à jour automatique de {club_name}: {e}")
         
         logger.info("Mise à jour automatique terminée")
+    
+    @tasks.loop(minutes=30)  # Toutes les 30 minutes
+    async def auto_rusheur_update(self):
+        """Envoie automatiquement les meilleurs rusheurs toutes les demi-heures"""
+        if not self.rusheur_channel_id:
+            return  # Pas de canal configuré
+        
+        try:
+            channel = self.bot.get_channel(self.rusheur_channel_id)
+            if not channel:
+                logger.error(f"Canal rusheur non trouvé: {self.rusheur_channel_id}")
+                return
+            
+            logger.info("Début de l'envoi automatique des meilleurs rusheurs")
+            
+            # Supprimer le message précédent s'il existe
+            if self.last_rusheur_message:
+                try:
+                    await self.last_rusheur_message.delete()
+                    logger.info("Ancien message des rusheurs supprimé")
+                except discord.NotFound:
+                    logger.warning("Ancien message des rusheurs déjà supprimé")
+                except discord.Forbidden:
+                    logger.error("Permissions insuffisantes pour supprimer l'ancien message")
+                except Exception as e:
+                    logger.error(f"Erreur lors de la suppression de l'ancien message: {e}")
+            
+            # Créer l'embed des meilleurs rusheurs
+            embed = discord.Embed(
+                title="🚀 Meilleurs rusheurs du mois",
+                color=0xffd700
+            )
+            
+            rusheurs_found = False
+            
+            for club_name in self.clubs.keys():
+                best_player = await self.get_best_rusher(club_name)
+                if best_player:
+                    diff = best_player['trophees_actuels'] - best_player['trophees_debut_mois']
+                    embed.add_field(
+                        name=f"🏆 {club_name}",
+                        value=f"**{best_player['pseudo']}**\n+{diff:,} trophées",
+                        inline=True
+                    )
+                    rusheurs_found = True
+                else:
+                    embed.add_field(
+                        name=f"❌ {club_name}",
+                        value="Aucun joueur trouvé",
+                        inline=True
+                    )
+            
+            if rusheurs_found:
+                # Ajouter un footer avec l'heure de mise à jour
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                embed.set_footer(text=f"🕐 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC")
+                
+                # Envoyer le nouveau message
+                self.last_rusheur_message = await channel.send(embed=embed)
+                logger.info(f"Nouveaux meilleurs rusheurs envoyés dans {channel.name}")
+            else:
+                logger.warning("Aucun rusheur trouvé, message non envoyé")
+                
+        except Exception as e:
+            logger.error(f"Erreur lors de l'envoi automatique des rusheurs: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    @auto_rusheur_update.before_loop
+    async def before_auto_rusheur_update(self):
+        """Attend que le bot soit prêt avant de démarrer l'envoi automatique"""
+        await self.bot.wait_until_ready()
+        logger.info("Bot prêt, l'envoi automatique des rusheurs peut démarrer")
     
     def run_flask(self):
         """Lance le serveur Flask"""
