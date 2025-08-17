@@ -399,7 +399,7 @@ class BrawlStarsBot:
                         
                         embed.add_field(
                             name=f"{emoji} {club_name}",
-                            value=f"**{places_libres}** place(s) libre(s),
+                            value=f"**{places_libres}** place(s) libre(s)",
                             inline=True
                         )
                     else:
