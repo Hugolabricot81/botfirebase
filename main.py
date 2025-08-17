@@ -391,15 +391,15 @@ class BrawlStarsBot:
                         
                         # Emoji selon le nombre de places
                         if places_libres == 0:
-                            emoji = "🔴"  # Complet
+                            emoji = "🟢"  # Complet
                         elif places_libres <= 5:
                             emoji = "🟡"  # Presque plein
                         else:
-                            emoji = "🟢"  # Places disponibles
+                            emoji = "🔴"  # Places disponibles
                         
                         embed.add_field(
                             name=f"{emoji} {club_name}",
-                            value=f"**{places_libres}** place(s) libre(s)\n({members}/30 membres)",
+                            value=f"**{places_libres}** place(s) libre(s),
                             inline=True
                         )
                     else:
@@ -411,17 +411,11 @@ class BrawlStarsBot:
                 
                 # Résumé total
                 embed.add_field(
-                    name="📊 Total Réseau Prairie",
+                    name="📊 Tous les clubs Prairie",
                     value=f"🟢 **{total_places_libres}** places libres au total\n👥 **{total_members}/180** membres",
                     inline=False
                 )
-                
-                # Légende
-                embed.add_field(
-                    name="📋 Légende",
-                    value="🔴 Complet • 🟡 Presque plein (≤5 places) • 🟢 Places disponibles",
-                    inline=False
-                )
+
                 
                 # Footer avec dernière mise à jour
                 embed.set_footer(text="💡 Les données sont mises à jour toutes les heures")
