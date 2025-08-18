@@ -1277,32 +1277,41 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             logger.error(f"Traceback complet: {traceback.format_exc()}")
     
 @auto_rusheur_update.before_loop
-async def before_auto_rusheur_update(self):
-    """Attend que le bot soit prêt avant de démarrer l'envoi automatique"""
-    await self.bot.wait_until_ready()
-    logger.info("Bot prêt, l'envoi automatique des rusheurs peut démarrer dans 30 minutes")
-    # Optionnel: attendre encore un peu pour être sûr que tout est initialisé
-    await asyncio.sleep(10)
+    async def before_auto_rusheur_update(self):
+        """Attend que le bot soit prêt avant de démarrer l'envoi automatique"""
+        await self.bot.wait_until_ready()
+        logger.info("Bot prêt, l'envoi automatique des rusheurs peut démarrer dans 30 minutes")
+        # Optionnel: attendre encore un peu pour être sûr que tout est initialisé
+        await asyncio.sleep(10)
 
-def run_flask(self):
-    """Lance le serveur Flask"""
-    self.app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    def run_flask(self):
+        """Lance le serveur Flask"""
+        self.app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
 
-async def run_bot(self):
-    """Lance le bot Discord"""
-    token = os.environ.get('DISCORD_TOKEN')
-    if not token:
-        raise ValueError("DISCORD_TOKEN non trouvé dans les variables d'environnement")
-    await self.bot.start(token)
+    async def run_bot(self):
+        """Lance le bot Discord"""
+        token = os.environ.get('DISCORD_TOKEN')
+        if not token:
+            raise ValueError("DISCORD_TOKEN non trouvé dans les variables d'environnement")
 
-def run(self):
-    """Lance le bot et le serveur Flask"""
-    # Lancer Flask dans un thread séparé
-    flask_thread = threading.Thread(target=self.run_flask, daemon=True)
-    flask_thread.start()
-    # Lancer le bot Discord
-    asyncio.run(self.run_bot())
+        await self.bot.start(token)
 
-if __name__ == "__main__":
+    def run(self):
+        """Lance le bot et le serveur Flask"""
+        # Lancer Flask dans un thread séparé
+        flask_thread = threading.Thread(target=self.run_flask, daemon=True)
+        flask_thread.start()
+
+        # Lancer le bot Discord
+        asyncio.run(self.run_bot())
+if name == "main":
     bot = BrawlStarsBot()
-    bot.run()
+    bot.run()eurs += 1
+                            logger.info(f"Rusheur trouvé pour {club_name}: {best_player['pseudo']} (+{diff})")
+                        else:
+                            embed.add_field(
+                                name=f"📉 {club_name}",
+                                value=f"{best_player['pseudo']}\n{diff:,} trophées",
+                                inline=True
+                            )
+                            total_rush
