@@ -1314,7 +1314,80 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                             )
                             rusheurs_found = True
                             total_rusheurs += 1
-                            logger.info(f"Rusheur trouvé pour {club_name}: {best_player['pseudo']} (+{diff})")
-                        else:
+                            logger.info(f"Rusheur ignoré pour {club_name}: {best_player['pseudo']} (diff: {diff})")
+                    else:
+                        embed.add_field(
+                            name=f"❌ {club_name}",
+                            value="Aucun joueur trouvé",
+                            inline=True
+                        )
+                        logger.warning(f"Aucun rusheur trouvé pour {club_name}")
+                except Exception as e:
+                    logger.error(f"Erreur lors de la récupération du rusheur pour {club_name}: {e}")
+                    embed.add_field(
+                        name=f"⚠️ {club_name}",
+                        value="Erreur de récupération",
+                        inline=True
+                    )
+            
+            # Ajouter un footer avec l'heure de mise à jour
+            now = datetime.now(timezone.utc)
+            embed.set_footer(text=f"🕑 Mis à jour automatiquement le {now.strftime('%d/%m/%Y à %H:%M')} UTC • {total_rusheurs} club(s) traité(s)")
+            
+            # Si aucun rusheur n'a été trouvé, ajouter un message par défaut
+            if not rusheurs_found:
+                embed.add_field(
+                    name="ℹ️ Information",
+                    value="Aucun rusheur avec des gains de trophées positifs trouvé pour le moment.",
+                    inline=False
+                )
+            
+            # Envoyer le nouveau message
+            try:
+                self.last_rusheur_message = await channel.send(embed=embed)
+                logger.info(f"Message des meilleurs rusheurs envoyé avec succès dans {channel.name} (ID: {self.last_rusheur_message.id})")
+            except discord.Forbidden:
+                logger.error(f"Permissions insuffisantes pour envoyer un message dans {channel.name}")
+                self.rusheur_channel_id = None  # Reset le canal si pas de permissions
+            except discord.HTTPException as e:
+                logger.error(f"Erreur HTTP lors de l'envoi du message: {e}")
+            except Exception as e:
+                logger.error(f"Erreur inattendue lors de l'envoi du message: {e}")
+                
+        except Exception as e:
+            logger.error(f"Erreur générale lors de l'envoi automatique des rusheurs: {e}")
+            import traceback
+            logger.error(f"Traceback complet: {traceback.format_exc()}")
 
-donne moi la fin du code
+    @auto_rusheur_update.before_loop
+    async def before_auto_rusheur_update(self):
+        """Attend que le bot soit prêt avant de démarrer l'envoi automatique"""
+        await self.bot.wait_until_ready()
+        logger.info("Bot prêt, l'envoi automatique des rusheurs peut démarrer dans 30 minutes")
+        # Optionnel: attendre encore un peu pour être sûr que tout est initialisé
+        await asyncio.sleep(10)
+
+    def run_flask(self):
+        """Lance le serveur Flask"""
+        self.app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    
+    async def run_bot(self):
+        """Lance le bot Discord"""
+        token = os.environ.get('DISCORD_TOKEN')
+        if not token:
+            raise ValueError("DISCORD_TOKEN non trouvé dans les variables d'environnement")
+        
+        await self.bot.start(token)
+    
+    def run(self):
+        """Lance le bot et le serveur Flask"""
+        # Lancer Flask dans un thread séparé
+        flask_thread = threading.Thread(target=self.run_flask, daemon=True)
+        flask_thread.start()
+        
+        # Lancer le bot Discord
+        asyncio.run(self.run_bot())
+
+if __name__ == "__main__":
+    bot = BrawlStarsBot()
+    bot.run()
