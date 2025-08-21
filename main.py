@@ -21,36 +21,68 @@ logger = logging.getLogger(__name__)
 
 class BrawlStarsBot:
     def __init__(self):
-        # Initialisation Discord
-        intents = discord.Intents.default()
-        intents.message_content = True
-        self.bot = commands.Bot(command_prefix='!', intents=intents)
+        logger.info("=== INITIALISATION DU BOT ===")
         
-        # Initialisation Firebase
-        self.init_firebase()
+        # Vérifier les variables d'environnement
+        discord_token = os.environ.get('DISCORD_TOKEN')
+        if discord_token:
+            logger.info("✅ DISCORD_TOKEN trouvé")
+        else:
+            logger.error("❌ DISCORD_TOKEN manquant")
         
-        # Configuration des clubs
-        self.clubs = {
-            "Prairie Fleurie": "#2C9Y28JPP",
-            "Prairie Céleste": "#2JUVYQ0YV",
-            "Prairie Gelée": "#2CJJLLUQ9",
-            "Prairie étoilée": "#29UPLG8QQ",
-            "Prairie Brulée": "#2YGPRQYCC",
-            "Mini Prairie": "#JY89VGGP",
-        }
+        port = os.environ.get('PORT', '5000')
+        logger.info(f"✅ PORT configuré sur: {port}")
         
-        # Flask pour le ping d'Uptime Robot
-        self.app = Flask(__name__)
-        
-        # Variable pour stocker le dernier message des rusheurs
-        self.last_rusheur_message = None
-        self.rusheur_channel_id = None  # À configurer via une commande
-        
-        # ID du rôle Modo
-        self.MODO_ROLE_ID = 1185678999335219311
-        
-        self.setup_discord_events()
-        self.setup_flask_routes()
+        try:
+            # Initialisation Discord
+            logger.info("Initialisation Discord...")
+            intents = discord.Intents.default()
+            intents.message_content = True
+            self.bot = commands.Bot(command_prefix='!', intents=intents)
+            logger.info("✅ Bot Discord initialisé")
+            
+            # Initialisation Firebase
+            logger.info("Initialisation Firebase...")
+            self.init_firebase()
+            logger.info("✅ Firebase initialisé")
+            
+            # Configuration des clubs
+            logger.info("Configuration des clubs...")
+            self.clubs = {
+                "Prairie Fleurie": "#2C9Y28JPP",
+                "Prairie Céleste": "#2JUVYQ0YV",
+                "Prairie Gelée": "#2CJJLLUQ9",
+                "Prairie étoilée": "#29UPLG8QQ",
+                "Prairie Brulée": "#2YGPRQYCC",
+                "Mini Prairie": "#JY89VGGP",
+            }
+            logger.info(f"✅ {len(self.clubs)} clubs configurés")
+            
+            # Flask pour le ping d'Uptime Robot
+            logger.info("Initialisation Flask...")
+            self.app = Flask(__name__)
+            logger.info("✅ Flask initialisé")
+            
+            # Variables pour les rusheurs
+            self.last_rusheur_message = None
+            self.rusheur_channel_id = None
+            
+            # ID du rôle Modo
+            self.MODO_ROLE_ID = 1185678999335219311
+            
+            logger.info("Configuration des événements Discord...")
+            self.setup_discord_events()
+            logger.info("✅ Événements Discord configurés")
+            
+            logger.info("Configuration des routes Flask...")
+            self.setup_flask_routes()
+            logger.info("✅ Routes Flask configurées")
+            
+            logger.info("=== INITIALISATION TERMINÉE ===")
+            
+        except Exception as e:
+            logger.error(f"❌ ERREUR LORS DE L'INITIALISATION: {e}")
+            raise
     
     def has_modo_role(self, interaction: discord.Interaction) -> bool:
         """Vérifie si l'utilisateur a le rôle Modo"""
@@ -119,6 +151,10 @@ class BrawlStarsBot:
         def ping():
             return "pong", 200
     
+    def run_flask(self):
+        """Lance le serveur Flask dans un thread séparé"""
+        self.app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    
     def setup_discord_events(self):
         """Configure les événements Discord"""
         
@@ -132,12 +168,22 @@ class BrawlStarsBot:
                 logger.error(f"Erreur lors de la synchronisation: {e}")
             
             # Démarrer la mise à jour automatique
-            self.auto_update.start()
-            logger.info("Mise à jour automatique programmée toutes les heures")
+            if not self.auto_update.is_running():
+                self.auto_update.start()
+                logger.info("Mise à jour automatique programmée toutes les heures")
             
             # Démarrer l'envoi automatique des meilleurs rusheurs
-            self.auto_rusheur_update.start()
-            logger.info("Envoi automatique des meilleurs rusheurs programmé toutes les demi-heures")
+            if not self.auto_rusheur_update.is_running():
+                self.auto_rusheur_update.start()
+                logger.info("Envoi automatique des meilleurs rusheurs programmé toutes les demi-heures")
+        
+        @self.bot.event
+        async def on_error(event, *args, **kwargs):
+            logger.error(f"Erreur Discord dans {event}: {args}, {kwargs}")
+
+        @self.bot.event  
+        async def on_command_error(ctx, error):
+            logger.error(f"Erreur de commande: {error}")
         
         @self.bot.tree.command(name="mytrophy", description="Affiche vos trophées actuels")
         async def mytrophy(interaction: discord.Interaction, player_id: str):
@@ -634,6 +680,142 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                 logger.error(f"Erreur dans club_info: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de la récupération des informations des clubs.")
     
+    # Tâches automatiques
+    @tasks.loop(hours=1)
+    async def auto_update(self):
+        """Met à jour automatiquement tous les clubs toutes les heures"""
+        try:
+            logger.info("Début de la mise à jour automatique des clubs")
+            for club_name, club_tag in self.clubs.items():
+                try:
+                    updated_count = await self.scrape_and_update_club(club_tag, club_name)
+                    logger.info(f"Mise à jour automatique de {club_name}: {updated_count} joueurs")
+                    await asyncio.sleep(30)  # Pause entre chaque club
+                except Exception as e:
+                    logger.error(f"Erreur lors de la mise à jour automatique de {club_name}: {e}")
+            
+            logger.info("Mise à jour automatique terminée")
+            
+        except Exception as e:
+            logger.error(f"Erreur générale lors de la mise à jour automatique: {e}")
+
+    @auto_update.before_loop
+    async def before_auto_update(self):
+        """Attendre que le bot soit prêt avant de commencer les tâches"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=30)
+    async def auto_rusheur_update(self):
+        """Envoie automatiquement les meilleurs rusheurs toutes les demi-heures"""
+        try:
+            if not self.rusheur_channel_id:
+                return
+            
+            channel = self.bot.get_channel(self.rusheur_channel_id)
+            if not channel:
+                logger.warning(f"Canal rusheur non trouvé: {self.rusheur_channel_id}")
+                return
+            
+            # Créer l'embed des meilleurs rusheurs
+            embed = discord.Embed(
+                title="🚀 Meilleurs rusheurs du mois",
+                color=0xffd700
+            )
+            
+            for club_name in self.clubs.keys():
+                try:
+                    best_player = await self.get_best_rusher(club_name)
+                    if best_player:
+                        diff = best_player['trophees_actuels'] - best_player['trophees_debut_mois']
+                        embed.add_field(
+                            name=f"🏆 {club_name}",
+                            value=f"**{best_player['pseudo']}**\n+{diff:,} trophées",
+                            inline=True
+                        )
+                    else:
+                        embed.add_field(
+                            name=f"❌ {club_name}",
+                            value="Aucun joueur trouvé",
+                            inline=True
+                        )
+                except Exception as e:
+                    logger.error(f"Erreur lors de la récupération du meilleur rusheur pour {club_name}: {e}")
+            
+            # Supprimer le message précédent s'il existe
+            if self.last_rusheur_message:
+                try:
+                    await self.last_rusheur_message.delete()
+                except:
+                    pass
+            
+            # Envoyer le nouveau message
+            self.last_rusheur_message = await channel.send(embed=embed)
+            logger.info("Message des meilleurs rusheurs envoyé automatiquement")
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de l'envoi automatique des rusheurs: {e}")
+
+    @auto_rusheur_update.before_loop
+    async def before_auto_rusheur_update(self):
+        """Attendre que le bot soit prêt avant de commencer les tâches"""
+        await self.bot.wait_until_ready()
+    
+    # Méthodes utilitaires
+    async def scrape_and_update_club(self, club_tag, club_name):
+        """Scrape et met à jour les données d'un club"""
+        try:
+            club_info = await self.scrape_club_info_detailed(club_tag)
+            if not club_info:
+                logger.error(f"Impossible de scraper les données pour {club_name}")
+                return 0
+            
+            # Mettre à jour les données du club dans Firestore
+            club_ref = self.db.collection('clubs').document(club_tag)
+            club_ref.set({
+                'name': club_name,
+                'tag': club_tag,
+                'total_trophies': club_info['total_trophies'],
+                'member_count': club_info['member_count'],
+                'min_trophies': club_info['min_trophies'],
+                'max_trophies': club_info['max_trophies'],
+                'updatedAt': datetime.now(timezone.utc)
+            }, merge=True)
+            
+            # Ici vous devriez également scraper les joueurs individuels
+            # et mettre à jour leurs trophées actuels
+            # Cette partie dépend de votre logique de scraping des joueurs
+            
+            logger.info(f"Club {club_name} mis à jour: {club_info['member_count']} membres")
+            return club_info['member_count']
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la mise à jour de {club_name}: {e}")
+            return 0
+
+    async def get_best_rusher(self, club_name):
+        """Récupère le meilleur rusheur d'un club"""
+        try:
+            players_ref = self.db.collection('players')
+            query = players_ref.where('club', '==', club_name)
+            docs = query.stream()
+            
+            best_player = None
+            best_diff = -1
+            
+            for doc in docs:
+                player_data = doc.to_dict()
+                diff = player_data['trophees_actuels'] - player_data['trophees_debut_mois']
+                
+                if diff > best_diff:
+                    best_diff = diff
+                    best_player = player_data
+            
+            return best_player
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération du meilleur rusheur pour {club_name}: {e}")
+            return None
+    
     async def scrape_club_info_detailed(self, club_tag):
         """Scrape les informations détaillées d'un club depuis brawlace.com avec min/max trophées"""
         try:
@@ -794,3 +976,33 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             return None
+    
+    def start(self):
+        """Démarre le bot Discord et le serveur Flask"""
+        try:
+            # Démarrer Flask dans un thread séparé
+            flask_thread = threading.Thread(target=self.run_flask)
+            flask_thread.daemon = True
+            flask_thread.start()
+            
+            logger.info("Serveur Flask démarré")
+            
+            # Démarrer le bot Discord
+            token = os.environ.get('DISCORD_TOKEN')
+            if not token:
+                logger.error("DISCORD_TOKEN non trouvé dans les variables d'environnement")
+                raise ValueError("DISCORD_TOKEN non trouvé")
+            
+            logger.info("Démarrage du bot Discord...")
+            self.bot.run(token, log_handler=None)  # Désactive le handler par défaut
+            
+        except KeyboardInterrupt:
+            logger.info("Arrêt du bot par l'utilisateur")
+        except Exception as e:
+            logger.error(f"Erreur fatale lors du démarrage: {e}")
+            raise
+
+# Point d'entrée principal
+if __name__ == "__main__":
+    bot = BrawlStarsBot()
+    bot.start()
