@@ -528,10 +528,7 @@ class BrawlStarsBot:
         async def on_command_error(ctx, error):
             logger.error(f"Erreur de commande: {error}")
 
-       @self.bot.tree.command(
-    name="presentation_courte",
-    description="Affiche la présentation du réseau Prairie avec les trophées actuels"
-)
+       @self.bot.tree.command(name="presentation_courte", description="Affiche la présentation du réseau Prairie avec les trophées actuels")
 async def presentation_courte(interaction: discord.Interaction):
     if not self.has_modo_role(interaction):
         await interaction.response.send_message(
