@@ -528,14 +528,20 @@ class BrawlStarsBot:
         async def on_command_error(ctx, error):
             logger.error(f"Erreur de commande: {error}")
 
-        @self.bot.tree.command(name="presentation_courte", description="Affiche la présentation du réseau Prairie avec les trophées actuels")
-async def presentation(interaction: discord.Interaction):
+       @self.bot.tree.command(
+    name="presentation_courte",
+    description="Affiche la présentation du réseau Prairie avec les trophées actuels"
+)
+async def presentation_courte(interaction: discord.Interaction):
     if not self.has_modo_role(interaction):
-        await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.",
+            ephemeral=True
+        )
         return
-        
+
     await interaction.response.defer()
-    
+
     try:
         clubs_info = {
             "Prairie Fleurie": {"emoji": "🌸", "seuil": "60k", "tag": "#2C9Y28JPP"},
@@ -545,53 +551,58 @@ async def presentation(interaction: discord.Interaction):
             "Prairie Brûlée": {"emoji": "🔥", "seuil": "45k", "tag": "#2YGPRQYCC"},
             "Mini Prairie": {"emoji": "🧚", "seuil": "3k", "tag": "#JY89VGGP", "note": " (pour smurfs)"}
         }
-        
+
         clubs_text = []
-        
+
         for club_name, info in clubs_info.items():
             club_ref = self.db.collection('clubs').document(info['tag'])
             club_doc = club_ref.get()
-            
+
             if club_doc.exists:
                 club_data = club_doc.to_dict()
                 total_trophies = club_data.get('total_trophies', 0)
-                
-                if total_trophies >= 1000000:
-                    trophies_display = f"{total_trophies / 1000000:.2f}M"
+
+                if total_trophies >= 1_000_000:
+                    trophies_display = f"{total_trophies / 1_000_000:.2f}M"
                 else:
                     trophies_display = f"{total_trophies / 1000:.0f}k"
-                
+
                 note = info.get('note', '')
-                clubs_text.append(f"{club_name} {info['emoji']} ({trophies_display}) – dès {info['seuil']}{note}")
+                clubs_text.append(
+                    f"{club_name} {info['emoji']} ({trophies_display}) – dès {info['seuil']}{note}"
+                )
             else:
-                clubs_text.append(f"{club_name} {info['emoji']} (?.??M) – dès {info['seuil']}{note}")
-        
-        presentation_text = f"""Hello à tous !
-Nous sommes une famille de 6 clubs Brawl Stars réunis autour de l’entraide, de l'activité et de la bonne humeur :
+                note = info.get('note', '')
+                clubs_text.append(
+                    f"{club_name} {info['emoji']} (?.??M) – dès {info['seuil']}{note}"
+                )
 
-{chr(10).join(clubs_text)}
+        presentation_text = (
+            "Hello à tous !\n"
+            "Nous sommes une famille de 6 clubs Brawl Stars réunis autour de l’entraide, de l'activité et de la bonne humeur :\n\n"
+            f"{chr(10).join(clubs_text)}\n\n"
+            "• Discord actif : entraide, animations (BS rush, mini-jeux, Gartic Phone, Among Us…).\n"
+            "• Pas d’expulsion automatique : objectifs adaptés par club/membre.\n"
+            "• Ambiance conviviale, parfait pour progresser en trophées & ranked !\n\n"
+            "Rejoins-nous et pousse dans la joie !\n\n"
+            "MP si tu veux intégrer l’un de nos clubs."
+        )
 
-• Discord actif : entraide, animations (BS rush, mini-jeux, Gartic Phone, Among Us…).
-• Pas d’expulsion automatique : objectifs adaptés par club/membre.
-• Ambiance conviviale, parfait pour progresser en trophées & ranked !
-
-Rejoins-nous et pousse dans la joie !
-
-MP si tu veux intégrer l’un de nos clubs."""
-        
         embed = discord.Embed(
             title="🌸 Présentation - Réseau Prairie 🌸",
             description=presentation_text,
             color=0x90EE90
         )
-        
+
         embed.set_footer(text="💡 Trophées mis à jour automatiquement toutes les heures")
-        
+
         await interaction.followup.send(embed=embed)
-        
+
     except Exception as e:
-        logger.error(f"Erreur dans presentation: {e}")
-        await interaction.followup.send("Une erreur s'est produite lors de la génération de la présentation.")
+        logger.error(f"Erreur dans presentation_courte: {e}")
+        await interaction.followup.send(
+            "Une erreur s'est produite lors de la génération de la présentation."
+        )
 
         # Commande de debug pour tester la connectivité
         @self.bot.tree.command(name="debug_connectivity", description="Test la connectivité réseau")
