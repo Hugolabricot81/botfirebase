@@ -54,45 +54,14 @@ class BrawlStarsBot:
     
     def has_modo_role(self, interaction: discord.Interaction) -> bool:
         """Vérifie si l'utilisateur a le rôle Modo"""
-        try:
-            # Log pour debug
-            logger.info(f"Vérification des permissions pour l'utilisateur {interaction.user.name} (ID: {interaction.user.id})")
-            
-            if not interaction.guild:
-                logger.warning("Pas de guild trouvé dans l'interaction")
-                return False
-            
-            # Essayer d'abord avec interaction.user si c'est déjà un Member
-            member = None
-            if hasattr(interaction.user, 'roles'):
-                member = interaction.user
-                logger.info("Utilisation directe de interaction.user (déjà un Member)")
-            else:
-                # Sinon, récupérer le membre depuis le guild
-                member = interaction.guild.get_member(interaction.user.id)
-                logger.info("Récupération du membre depuis le guild")
-            
-            if not member:
-                logger.warning(f"Membre non trouvé pour l'ID {interaction.user.id}")
-                return False
-            
-            # Log des rôles de l'utilisateur
-            user_roles = [f"{role.name} (ID: {role.id})" for role in member.roles]
-            logger.info(f"Rôles de l'utilisateur: {user_roles}")
-            logger.info(f"ID du rôle Modo recherché: {self.MODO_ROLE_ID}")
-            
-            # Vérifier si l'utilisateur a le rôle Modo (comparaison flexible)
-            for role in member.roles:
-                if role.id == self.MODO_ROLE_ID or str(role.id) == str(self.MODO_ROLE_ID):
-                    logger.info(f"Rôle Modo trouvé: {role.name} (ID: {role.id})")
-                    return True
-            
-            logger.warning("Rôle Modo non trouvé pour cet utilisateur")
+        if not interaction.guild:
             return False
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la vérification du rôle Modo: {e}")
+        
+        member = interaction.guild.get_member(interaction.user.id)
+        if not member:
             return False
+        
+        return any(role.id == self.MODO_ROLE_ID for role in member.roles)
         
     def init_firebase(self):
         """Initialise Firebase avec le secret file"""
@@ -309,55 +278,6 @@ class BrawlStarsBot:
                 logger.error(f"Erreur dans reset_debut_mois: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de la réinitialisation.")
         
-        @self.bot.tree.command(name="debug_roles", description="Affiche tous les rôles du serveur (pour debug)")
-        async def debug_roles(interaction: discord.Interaction):
-            await interaction.response.defer()
-            
-            try:
-                if not interaction.guild:
-                    await interaction.followup.send("Cette commande ne fonctionne que dans un serveur.")
-                    return
-                
-                roles_list = []
-                for role in interaction.guild.roles:
-                    roles_list.append(f"**{role.name}** - ID: `{role.id}`")
-                
-                # Diviser en plusieurs messages si nécessaire
-                roles_text = "\n".join(roles_list)
-                
-                if len(roles_text) > 2000:
-                    # Si trop long, envoyer en plusieurs parties
-                    chunks = [roles_text[i:i+1900] for i in range(0, len(roles_text), 1900)]
-                    for i, chunk in enumerate(chunks):
-                        embed = discord.Embed(
-                            title=f"🔧 Rôles du serveur (partie {i+1}/{len(chunks)})",
-                            description=chunk,
-                            color=0x0099ff
-                        )
-                        await interaction.followup.send(embed=embed)
-                else:
-                    embed = discord.Embed(
-                        title="🔧 Rôles du serveur",
-                        description=roles_text,
-                        color=0x0099ff
-                    )
-                    await interaction.followup.send(embed=embed)
-                
-                # Afficher aussi les rôles de l'utilisateur
-                member = interaction.guild.get_member(interaction.user.id)
-                if member:
-                    user_roles = [f"**{role.name}** - ID: `{role.id}`" for role in member.roles]
-                    user_embed = discord.Embed(
-                        title="👤 Vos rôles",
-                        description="\n".join(user_roles),
-                        color=0x00ff00
-                    )
-                    await interaction.followup.send(embed=user_embed)
-                
-            except Exception as e:
-                logger.error(f"Erreur dans debug_roles: {e}")
-                await interaction.followup.send("Une erreur s'est produite lors de l'affichage des rôles.")
-        
         @self.bot.tree.command(name="places_libres", description="Affiche le nombre de places libres dans chaque club")
         async def places_libres(interaction: discord.Interaction):
             # Vérification du rôle Modo
@@ -391,15 +311,15 @@ class BrawlStarsBot:
                         
                         # Emoji selon le nombre de places
                         if places_libres == 0:
-                            emoji = "🟢"  # Complet
+                            emoji = "🔴"  # Complet
                         elif places_libres <= 5:
                             emoji = "🟡"  # Presque plein
                         else:
-                            emoji = "🔴"  # Places disponibles
+                            emoji = "🟢"  # Places disponibles
                         
                         embed.add_field(
                             name=f"{emoji} {club_name}",
-                            value=f"**{places_libres}** place(s) libre(s)",
+                            value=f"**{places_libres}** place(s) libre(s)\n({members}/30 membres)",
                             inline=True
                         )
                     else:
@@ -411,11 +331,17 @@ class BrawlStarsBot:
                 
                 # Résumé total
                 embed.add_field(
-                    name="📊 Tous les clubs Prairie",
+                    name="📊 Total Réseau Prairie",
                     value=f"🟢 **{total_places_libres}** places libres au total\n👥 **{total_members}/180** membres",
                     inline=False
                 )
-
+                
+                # Légende
+                embed.add_field(
+                    name="📋 Légende",
+                    value="🔴 Complet • 🟡 Presque plein (≤5 places) • 🟢 Places disponibles",
+                    inline=False
+                )
                 
                 # Footer avec dernière mise à jour
                 embed.set_footer(text="💡 Les données sont mises à jour toutes les heures")
