@@ -495,6 +495,67 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                 logger.error(f"Erreur dans presentation: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de la génération de la présentation.")
         
+        @self.bot.tree.command(name="presentation_courte", description="Affiche la présentation courte du réseau Prairie")
+        async def presentation_courte(interaction: discord.Interaction):
+            # Vérification du rôle Modo
+            if not self.has_modo_role(interaction):
+                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
+                return
+                
+            await interaction.response.defer()
+            
+            try:
+                # Configuration des clubs avec leurs seuils
+                clubs_config = {
+                    "Prairie Fleurie": {"seuil": "60k", "tag": "#2C9Y28JPP"},
+                    "Prairie Céleste": {"seuil": "60k", "tag": "#2JUVYQ0YV"},
+                    "Prairie Gelée": {"seuil": "55k", "tag": "#2CJJLLUQ9"},
+                    "Prairie Étoilée": {"seuil": "55k", "tag": "#29UPLG8QQ"},
+                    "Prairie Brûlée": {"seuil": "45k", "tag": "#2YGPRQYCC"},
+                    "Mini Prairie": {"seuil": "3k", "tag": "#JY89VGGP", "note": " (pour smurfs)"}
+                }
+                
+                # Récupérer les trophées de chaque club
+                clubs_list = []
+                
+                for club_name, config in clubs_config.items():
+                    club_ref = self.db.collection('clubs').document(config['tag'])
+                    club_doc = club_ref.get()
+                    
+                    if club_doc.exists:
+                        club_data = club_doc.to_dict()
+                        total_trophies = club_data.get('total_trophies', 0)
+                        
+                        # Convertir en millions et arrondir au centième
+                        if total_trophies >= 1000000:
+                            trophies_display = f"{total_trophies / 1000000:.2f}M"
+                        else:
+                            trophies_display = f"{total_trophies / 1000:.0f}k"
+                        
+                        note = config.get('note', '')
+                        clubs_list.append(f"{club_name} ({trophies_display}) – dès {config['seuil']}{note}")
+                    else:
+                        clubs_list.append(f"{club_name} (?.??M) – dès {config['seuil']}")
+                
+                # Construire le texte complet de la présentation courte
+                presentation_text = f"""**Présentation - Réseau Prairie**
+
+Hello à tous ! Nous sommes une famille de 6 clubs Brawl Stars réunis autour de l'entraide, de l'activité et de la bonne humeur : {' '.join(clubs_list)}
+
+• Discord actif : entraide, animations (BS rush, mini-jeux, Gartic Phone, Among Us…).
+• Pas d'expulsion automatique : objectifs adaptés par club/membre.
+• Ambiance conviviale, parfait pour progresser en trophées & ranked !
+
+Rejoins-nous et pousse dans la joie ! MP si tu veux intégrer l'un de nos clubs.
+
+**💡 Trophées mis à jour automatiquement toutes les heures**"""
+                
+                await interaction.followup.send(presentation_text)
+                
+            except Exception as e:
+                logger.error(f"Erreur dans presentation_courte: {e}")
+                await interaction.followup.send("Une erreur s'est produite lors de la génération de la présentation courte.")
+        
         @self.bot.tree.command(name="set_rusheur_channel", description="Définit le canal pour l'envoi automatique des meilleurs rusheurs")
         async def set_rusheur_channel(interaction: discord.Interaction):
             # Vérification du rôle Modo
