@@ -119,155 +119,6 @@ class BrawlStarsBot:
         def ping():
             return "pong", 200
     
-    async def scrape_player_ranked(self, player_id):
-        """Scrape la ranked d'un joueur depuis brawlace.com/players/{id}/mastery"""
-        try:
-            clean_id = player_id.replace('#', '').upper()
-            url = f'https://brawlace.com/players/%23{clean_id}/mastery'
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0',
-                'Referer': 'https://brawlace.com/'
-            }
-            
-            connector = aiohttp.TCPConnector(
-                limit=100,
-                limit_per_host=30,
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-            )
-            
-            timeout = aiohttp.ClientTimeout(total=30, connect=10)
-            
-            async with aiohttp.ClientSession(
-                headers=headers, 
-                connector=connector,
-                timeout=timeout
-            ) as session:
-                
-                await asyncio.sleep(1)  # Délai pour éviter d'être détecté comme bot
-                
-                logger.info(f"Tentative de scraping ranked pour {url}")
-                
-                async with session.get(url, ssl=False, allow_redirects=True) as response:
-                    logger.info(f"Status code: {response.status} pour {url}")
-                    
-                    if response.status == 200:
-                        html = await response.text()
-                        logger.info(f"HTML récupéré avec succès pour la ranked de {player_id}, taille: {len(html)}")
-                    else:
-                        logger.error(f"Erreur HTTP {response.status} pour {url}")
-                        return None
-            
-            # Parser la ranked depuis le HTML
-            ranked_points = None
-            
-            # Différents patterns pour trouver la ranked actuelle
-            ranked_patterns = [
-                # Pattern pour les points de ranked (généralement affichés avec "Ranked:" ou similaire)
-                r'ranked[^>]*>[\s\S]*?([0-9,]+)',
-                r'current\s*ranked[^>]*>[\s\S]*?([0-9,]+)',
-                r'ranked\s*points?[^>]*>[\s\S]*?([0-9,]+)',
-                # Pattern plus général pour chercher des nombres près du mot "ranked"
-                r'ranked[\s\S]{0,100}?([0-9,]+)',
-                # Pattern pour les divs/spans contenant "ranked"
-                r'<[^>]*ranked[^>]*>[\s\S]*?([0-9,]+)',
-                # Pattern pour chercher dans les attributs de classe ou data
-                r'class="[^"]*ranked[^"]*"[^>]*>[\s\S]*?([0-9,]+)',
-                # Pattern pour les trophées de ranked (souvent différenciés des trophées normaux)
-                r'<td[^>]*>[\s\S]*?ranked[\s\S]*?</td>[\s\S]*?<td[^>]*>([0-9,]+)</td>',
-            ]
-            
-            for pattern in ranked_patterns:
-                matches = re.findall(pattern, html, re.IGNORECASE)
-                for match in matches:
-                    try:
-                        points = int(match.replace(',', '').replace(' ', ''))
-                        if points >= 0 and points <= 100000:  # Validation raisonnable pour les points de ranked
-                            ranked_points = points
-                            logger.info(f"Ranked trouvée pour {player_id}: {ranked_points} points")
-                            break
-                    except ValueError:
-                        continue
-                if ranked_points is not None:
-                    break
-            
-            # Si aucun pattern spécifique ne marche, essayer de chercher dans le contexte "mastery"
-            if ranked_points is None:
-                mastery_patterns = [
-                    r'mastery[\s\S]{0,200}?([0-9,]+)',
-                    r'<td[^>]*>[\s\S]*?([0-9,]+)[\s\S]*?</td>',  # Chercher dans les cellules de tableau
-                ]
-                
-                for pattern in mastery_patterns:
-                    matches = re.findall(pattern, html, re.IGNORECASE)
-                    for match in matches:
-                        try:
-                            points = int(match.replace(',', '').replace(' ', ''))
-                            if points >= 0 and points <= 100000:
-                                ranked_points = points
-                                logger.info(f"Ranked trouvée (pattern mastery) pour {player_id}: {ranked_points} points")
-                                break
-                        except ValueError:
-                            continue
-                    if ranked_points is not None:
-                        break
-            
-            if ranked_points is None:
-                logger.warning(f"Aucune ranked trouvée pour {player_id}")
-                # Log un échantillon du HTML pour debug si nécessaire
-                if len(html) > 0:
-                    logger.debug(f"Échantillon HTML mastery pour {player_id}: {html[:500]}")
-                return 0  # Retourner 0 si pas de ranked trouvée
-            
-            return ranked_points
-            
-        except Exception as e:
-            logger.error(f"Erreur lors du scraping de la ranked pour {player_id}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return None
-    
-    async def update_player_ranked(self, player_id):
-        """Met à jour la ranked d'un joueur dans sa sous-collection Firebase"""
-        try:
-            ranked_points = await self.scrape_player_ranked(player_id)
-            
-            if ranked_points is None:
-                logger.warning(f"Impossible de récupérer la ranked pour {player_id}")
-                return False
-            
-            current_time = datetime.now(timezone.utc)
-            
-            # Référence vers la sous-collection ranked du joueur
-            player_ref = self.db.collection('players').document(player_id)
-            ranked_ref = player_ref.collection('ranked').document('current')
-            
-            ranked_data = {
-                'points': ranked_points,
-                'updatedAt': current_time
-            }
-            
-            # Mettre à jour ou créer le document ranked
-            ranked_ref.set(ranked_data)
-            logger.info(f"Ranked mise à jour pour {player_id}: {ranked_points} points")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la mise à jour de la ranked pour {player_id}: {e}")
-            return False
-    
     def setup_discord_events(self):
         """Configure les événements Discord"""
         
@@ -325,16 +176,6 @@ class BrawlStarsBot:
                 
                 embed.add_field(name="Club", value=player_doc['club'], inline=True)
                 
-                # Ajouter la ranked si elle existe
-                try:
-                    ranked_ref = self.db.collection('players').document(clean_id).collection('ranked').document('current')
-                    ranked_doc = ranked_ref.get()
-                    if ranked_doc.exists:
-                        ranked_data = ranked_doc.to_dict()
-                        embed.add_field(name="💎 Ranked", value=f"{ranked_data['points']:,} points", inline=True)
-                except Exception as e:
-                    logger.error(f"Erreur lors de la récupération de la ranked: {e}")
-                
                 if 'updatedAt' in player_doc:
                     last_update = player_doc['updatedAt']
                     embed.set_footer(text=f"Dernière mise à jour: {last_update.strftime('%d/%m/%Y %H:%M')}")
@@ -370,7 +211,7 @@ class BrawlStarsBot:
                 )
                 embed.add_field(
                     name="ℹ️ Information",
-                    value="Les trophées actuels et la ranked ont été mis à jour.\nLes trophées de début de mois sont préservés.",
+                    value="Seuls les trophées actuels ont été mis à jour.\nLes trophées de début de mois sont préservés.",
                     inline=False
                 )
                 await interaction.followup.send(embed=embed)
@@ -378,62 +219,6 @@ class BrawlStarsBot:
             except Exception as e:
                 logger.error(f"Erreur dans update_club: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de la mise à jour.")
-        
-        @self.bot.tree.command(name="update_ranked", description="Met à jour uniquement la ranked d'un joueur")
-        async def update_ranked(interaction: discord.Interaction, player_id: str):
-            # Vérification du rôle Modo
-            if not self.has_modo_role(interaction):
-                await interaction.response.send_message("❌ Vous n'avez pas les permissions nécessaires pour utiliser cette commande.", ephemeral=True)
-                return
-                
-            await interaction.response.defer()
-            
-            try:
-                # Nettoyer l'ID du joueur
-                clean_id = player_id.replace('#', '').upper()
-                if not clean_id.startswith('#'):
-                    clean_id = '#' + clean_id
-                
-                # Vérifier que le joueur existe
-                player_ref = self.db.collection('players').document(clean_id)
-                player_doc = player_ref.get()
-                
-                if not player_doc.exists:
-                    await interaction.followup.send(f"Joueur {clean_id} non trouvé dans la base de données.")
-                    return
-                
-                player_data = player_doc.to_dict()
-                
-                # Mettre à jour la ranked
-                success = await self.update_player_ranked(clean_id)
-                
-                if success:
-                    # Récupérer la ranked mise à jour
-                    ranked_ref = player_ref.collection('ranked').document('current')
-                    ranked_doc = ranked_ref.get()
-                    
-                    embed = discord.Embed(
-                        title="✅ Ranked mise à jour",
-                        description=f"Joueur: **{player_data['pseudo']}** ({clean_id})",
-                        color=0x00ff00
-                    )
-                    
-                    if ranked_doc.exists:
-                        ranked_data = ranked_doc.to_dict()
-                        embed.add_field(
-                            name="💎 Nouvelle ranked",
-                            value=f"{ranked_data['points']:,} points",
-                            inline=True
-                        )
-                        embed.set_footer(text=f"Mis à jour le {ranked_data['updatedAt'].strftime('%d/%m/%Y à %H:%M')}")
-                    
-                    await interaction.followup.send(embed=embed)
-                else:
-                    await interaction.followup.send(f"❌ Échec de la mise à jour de la ranked pour {player_data['pseudo']} ({clean_id})")
-                
-            except Exception as e:
-                logger.error(f"Erreur dans update_ranked: {e}")
-                await interaction.followup.send("Une erreur s'est produite lors de la mise à jour de la ranked.")
         
         @self.bot.tree.command(name="meilleur_rusheur", description="Affiche le meilleur rusheur de chaque club")
         async def meilleur_rusheur(interaction: discord.Interaction):
@@ -1096,7 +881,7 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             logger.error(f"Erreur lors de la mise à jour des infos club {club_name}: {e}")
     
     async def scrape_and_update_club(self, club_tag, club_name):
-        """Scrape et met à jour les données d'un club dans Firebase (joueurs + infos club + ranked)"""
+        """Scrape et met à jour les données d'un club dans Firebase (joueurs + infos club)"""
         # Scraper les joueurs
         players_data = await self.scrape_club_data(club_tag)
         updated_players = 0
@@ -1131,13 +916,7 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                     player_ref.set(new_player_data)
                     logger.debug(f"Nouveau joueur créé: {player_data['pseudo']} - trophees_debut_mois initialisé")
                 
-                # Mettre à jour la ranked du joueur (pour tous les joueurs)
-                await self.update_player_ranked(player_data['id'])
-                
                 updated_players += 1
-                
-                # Petit délai entre chaque joueur pour éviter le rate limiting
-                await asyncio.sleep(0.5)
                 
             except Exception as e:
                 logger.error(f"Erreur lors de la mise à jour du joueur {player_data['id']}: {e}")
@@ -1146,7 +925,7 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
         club_info = await self.scrape_club_info(club_tag)
         await self.update_club_info_in_firebase(club_info, club_name)
         
-        logger.info(f"Mis à jour {updated_players} joueurs (avec ranked) et infos pour le club {club_name}")
+        logger.info(f"Mis à jour {updated_players} joueurs et infos pour le club {club_name}")
         return updated_players
     
     async def get_best_rusher(self, club_name):
@@ -1240,6 +1019,14 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                             )
                             rusheurs_found = True
                             total_rusheurs += 1
+                            logger.info(f"Rusheur trouvé pour {club_name}: {best_player['pseudo']} (+{diff})")
+                        else:
+                            embed.add_field(
+                                name=f"📉 {club_name}",
+                                value=f"**{best_player['pseudo']}**\n{diff:,} trophées",
+                                inline=True
+                            )
+                            total_rusheurs += 1
                     else:
                         embed.add_field(
                             name=f"❌ {club_name}",
@@ -1276,42 +1063,35 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             import traceback
             logger.error(f"Traceback complet: {traceback.format_exc()}")
     
-@auto_rusheur_update.before_loop
+    @auto_rusheur_update.before_loop
     async def before_auto_rusheur_update(self):
         """Attend que le bot soit prêt avant de démarrer l'envoi automatique"""
         await self.bot.wait_until_ready()
         logger.info("Bot prêt, l'envoi automatique des rusheurs peut démarrer dans 30 minutes")
         # Optionnel: attendre encore un peu pour être sûr que tout est initialisé
         await asyncio.sleep(10)
-
+    
     def run_flask(self):
         """Lance le serveur Flask"""
         self.app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
-
+    
     async def run_bot(self):
         """Lance le bot Discord"""
         token = os.environ.get('DISCORD_TOKEN')
         if not token:
             raise ValueError("DISCORD_TOKEN non trouvé dans les variables d'environnement")
-
+        
         await self.bot.start(token)
-
+    
     def run(self):
         """Lance le bot et le serveur Flask"""
         # Lancer Flask dans un thread séparé
         flask_thread = threading.Thread(target=self.run_flask, daemon=True)
         flask_thread.start()
-
+        
         # Lancer le bot Discord
         asyncio.run(self.run_bot())
-if name == "main":
+
+if __name__ == "__main__":
     bot = BrawlStarsBot()
-    bot.run()eurs += 1
-                            logger.info(f"Rusheur trouvé pour {club_name}: {best_player['pseudo']} (+{diff})")
-                        else:
-                            embed.add_field(
-                                name=f"📉 {club_name}",
-                                value=f"{best_player['pseudo']}\n{diff:,} trophées",
-                                inline=True
-                            )
-                            total_rush
+    bot.run()
