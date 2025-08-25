@@ -547,44 +547,50 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                 logger.error(f"Erreur dans stop_rusheur_auto: {e}")
                 await interaction.followup.send("Une erreur s'est produite lors de l'arrêt de l'envoi automatique.")
     
+    async def create_session(self):
+        """Crée une session aiohttp avec configuration pour éviter les erreurs Brotli"""
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+            # IMPORTANT: Ne pas accepter l'encodage Brotli pour éviter l'erreur
+            'Accept-Encoding': 'gzip, deflate',  # Retiré 'br' (Brotli)
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0',
+            'Referer': 'https://brawlace.com/'
+        }
+        
+        # Configuration du connecteur
+        connector = aiohttp.TCPConnector(
+            limit=100,
+            limit_per_host=30,
+            ttl_dns_cache=300,
+            use_dns_cache=True,
+        )
+        
+        # Configuration du timeout
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        
+        return aiohttp.ClientSession(
+            headers=headers, 
+            connector=connector,
+            timeout=timeout
+        )
+    
     async def scrape_club_info(self, club_tag):
         """Scrape les informations générales d'un club depuis brawlace.com"""
         try:
             clean_tag = club_tag.replace('#', '').upper()
             url = f'https://brawlace.com/clubs/%23{clean_tag}'
             
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0',
-                'Referer': 'https://brawlace.com/'
-            }
+            session = await self.create_session()
             
-            # Configuration du connecteur avec timeout plus long
-            connector = aiohttp.TCPConnector(
-                limit=100,
-                limit_per_host=30,
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-            )
-            
-            # Timeout configuration
-            timeout = aiohttp.ClientTimeout(total=30, connect=10)
-            
-            async with aiohttp.ClientSession(
-                headers=headers, 
-                connector=connector,
-                timeout=timeout
-            ) as session:
-                
+            try:
                 # Attendre un peu pour éviter d'être détecté comme bot
                 await asyncio.sleep(2)
                 
@@ -595,12 +601,13 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                     logger.info(f"Content encoding: {response.headers.get('content-encoding', 'none')}")
                     
                     if response.status == 200:
-                        # Le décodage brotli devrait maintenant fonctionner
                         html = await response.text()
                         logger.info(f"HTML récupéré avec succès pour {club_tag}, taille: {len(html)}")
                     else:
                         logger.error(f"Erreur HTTP {response.status} pour {url}")
                         return None
+            finally:
+                await session.close()
             
             logger.info(f"HTML récupéré pour {club_tag}, taille: {len(html)}")
             
@@ -695,38 +702,9 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
             clean_tag = club_tag.replace('#', '').upper()
             url = f'https://brawlace.com/clubs/%23{clean_tag}'
             
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0',
-                'Referer': 'https://brawlace.com/'
-            }
+            session = await self.create_session()
             
-            # Configuration du connecteur avec timeout plus long
-            connector = aiohttp.TCPConnector(
-                limit=100,
-                limit_per_host=30,
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-            )
-            
-            # Timeout configuration
-            timeout = aiohttp.ClientTimeout(total=30, connect=10)
-            
-            async with aiohttp.ClientSession(
-                headers=headers, 
-                connector=connector,
-                timeout=timeout
-            ) as session:
-                
+            try:
                 # Attendre un peu pour éviter d'être détecté comme bot
                 await asyncio.sleep(2)
                 
@@ -737,12 +715,13 @@ Nous sommes une famille de 6 clubs, laissez-nous vous les présenter :
                     logger.info(f"Content encoding: {response.headers.get('content-encoding', 'none')}")
                     
                     if response.status == 200:
-                        # Le décodage brotli devrait maintenant fonctionner
                         html = await response.text()
                         logger.info(f"HTML récupéré avec succès pour {club_tag}, taille: {len(html)}")
                     else:
                         logger.error(f"Erreur HTTP {response.status} pour {url}")
                         return []
+            finally:
+                await session.close()
             
             logger.info(f"HTML récupéré pour {club_tag}, taille: {len(html)}")
             
